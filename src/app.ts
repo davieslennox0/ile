@@ -66,6 +66,17 @@ const _quat = new Quaternion();
 const _v = new Vector3();
 const _dir = new Vector3();
 
+function isSoftwareRenderer(world: World): boolean {
+  try {
+    const gl = world.renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+    return /swiftshader|llvmpipe|software/i.test(name);
+  } catch {
+    return false;
+  }
+}
+
 export class App {
   readonly world: World;
   readonly gestures: Gestures;
@@ -115,16 +126,19 @@ export class App {
   private anchoredInXR = false;
   private started = false;
   private readonly listeners: ((event: string) => void)[] = [];
+  private readonly eventLog: string[] = [];
 
   constructor(world: World) {
     this.world = world;
     this.gestures = new Gestures(world);
     world.createTransformEntity(this.root, { persistent: true });
-    world.renderer.shadowMap.enabled = true;
+    // Software renderers (headless CI, remote desktops) cannot afford shadows.
+    const lowGfx = isSoftwareRenderer(world);
+    world.renderer.shadowMap.enabled = !lowGfx;
 
     // Light: a warm sky fill plus the sun, which follows the hour.
     this.root.add(new HemisphereLight(0xfff1d6, 0x8a6a4a, 0.85));
-    this.sun.castShadow = true;
+    this.sun.castShadow = !lowGfx;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0004;
     this.root.add(this.sun, this.sun.target);
@@ -212,6 +226,24 @@ export class App {
       if (!hit && this.menu.isOpen) this.menu.close();
       if (!this.started) this.begin();
     };
+
+    // Desktop preview shortcuts (never needed in the headset).
+    const keys: Record<string, () => void> = {
+      h: () => this.setHeat(!this.heatOn),
+      e: () => this.askElder(),
+      c: () => this.toggleCompare(),
+      u: () => this.undo(),
+      m: () => this.cycleMaterial(),
+      r: () => this.reset(),
+      y: () => this.acceptProposal(),
+      n: () => this.rejectProposal(),
+      b: () => this.shift.exit(),
+      s: () => this.onboarding.skip(),
+    };
+    window.addEventListener('keydown', (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      keys[e.key.toLowerCase()]?.();
+    });
 
     this.headPose(_pos, _quat);
     this.table.anchor(_pos, _quat);
@@ -322,6 +354,8 @@ export class App {
 
   private emit(event: string): void {
     console.info(`[ile] ${event} · score ${this.day.overall} · ${this.mode}`);
+    this.eventLog.push(event);
+    this.root.name = `ile-state|${this.mode}|${this.room ?? '-'}|${this.day.overall}|${this.eventLog.slice(-6).join(',')}`;
     for (const l of this.listeners) l(event);
   }
 
@@ -484,7 +518,7 @@ export class App {
     if (this.mode === 'inside' && this.room) {
       const s = this.now.rooms[this.room];
       this.badge.setText(
-        `${ROOM_LABEL[this.room]}\n${s.feel.toFixed(0)}°C feel · ${s.breeze} · comfort ${s.comfort}`,
+        `${ROOM_LABEL[this.room]} · comfort ${s.comfort}\n${s.feel.toFixed(0)}°C feel · ${s.breeze}`,
       );
       Sfx.wind(s.breeze === 'breezy' ? 1 : s.breeze === 'some air' ? 0.45 : 0.1);
     } else {
@@ -681,7 +715,20 @@ export class App {
             { label: 'Reset', run: () => this.reset() },
             { label: 'Re-\ncentre', run: () => this.recenter() },
           ];
+    // Keep the menu inside the VR Glasses' narrow view: pull it toward the
+    // centre line and never closer than a comfortable reading distance.
     this.headPose(_pos, _quat);
+    _dir.set(0, 0, -1).applyQuaternion(_quat);
+    _dir.y = 0;
+    _dir.normalize();
+    const side = _v.set(-_dir.z, 0, _dir.x);
+    const rel = at.clone().sub(_pos);
+    const forward = Math.max(0.42, rel.dot(_dir));
+    const limit = Math.tan((9 * Math.PI) / 180) * forward;
+    const lateral = Math.min(limit, Math.max(-limit, rel.dot(side)));
+    const height = Math.min(_pos.y - 0.05, Math.max(_pos.y - 0.32, at.y));
+    at.copy(_pos).addScaledVector(_dir, forward).addScaledVector(side, lateral);
+    at.y = height;
     this.menu.open(items, at, _pos);
   }
 

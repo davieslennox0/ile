@@ -30,7 +30,7 @@ No controller is needed anywhere. Every gesture also has a pinch-only path, so i
 | Hold a palm up for 0.5 s (or pinch **Menu**) | Tool menu: Heat, Elder, Compare, Undo, Walls, Reset, Re-centre |
 | Flick an open hand left | Undo |
 
-On desktop (no headset) the same targets work with the mouse, so the build can be judged in a browser tab.
+On desktop (no headset) the same targets work with the mouse, so the build can be judged in a browser tab. Desktop-only shortcuts: `H` heat, `E` ask the Elder, `Y`/`N` accept/reject, `C` compare, `U` undo, `M` wall material, `R` reset, `B` back to table, `S` skip intro.
 
 ## The heat score is a heuristic, not physics
 

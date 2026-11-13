@@ -13,7 +13,7 @@ import {
   DoubleSide,
   Group,
   Mesh,
-  MeshStandardMaterial,
+  MeshLambertMaterial,
   PlaneGeometry,
 } from '@iwsdk/core';
 import {
@@ -275,29 +275,27 @@ export interface BuildingViewOptions {
 export class BuildingView {
   /** Rotates with the design's compass bearing. Children are in metres. */
   readonly group = new Group();
-  readonly floors = new Map<RoomId, Mesh<PlaneGeometry, MeshStandardMaterial>>();
-  readonly courtFloor: Mesh<PlaneGeometry, MeshStandardMaterial>;
-  readonly roofMaterial: MeshStandardMaterial;
-  readonly wallMaterial: MeshStandardMaterial;
-  private readonly walls: Mesh<BufferGeometry, MeshStandardMaterial>;
-  private readonly roof: Mesh<BufferGeometry, MeshStandardMaterial> | null;
-  private readonly plinth: Mesh<BoxGeometry, MeshStandardMaterial>;
+  readonly floors = new Map<RoomId, Mesh<PlaneGeometry, MeshLambertMaterial>>();
+  readonly courtFloor: Mesh<PlaneGeometry, MeshLambertMaterial>;
+  readonly roofMaterial: MeshLambertMaterial;
+  readonly wallMaterial: MeshLambertMaterial;
+  private readonly walls: Mesh<BufferGeometry, MeshLambertMaterial>;
+  private readonly roof: Mesh<BufferGeometry, MeshLambertMaterial> | null;
+  private readonly plinth: Mesh<BoxGeometry, MeshLambertMaterial>;
   private readonly opts: BuildingViewOptions;
 
   constructor(opts: BuildingViewOptions = {}) {
     this.opts = opts;
     const ghost = !!opts.ghost;
     const shadows = !!opts.shadows && !ghost;
-    this.wallMaterial = new MeshStandardMaterial({
+    this.wallMaterial = new MeshLambertMaterial({
       color: ghost ? 0x7fe3ff : WALL_COLOR.earth,
-      roughness: 0.95,
       transparent: ghost,
       opacity: ghost ? 0.28 : 1,
       depthWrite: !ghost,
     });
-    this.roofMaterial = new MeshStandardMaterial({
+    this.roofMaterial = new MeshLambertMaterial({
       color: ghost ? 0x7fe3ff : ROOF_COLOR.earth,
-      roughness: 0.9,
       side: DoubleSide,
       transparent: true,
       opacity: ghost ? 0.34 : 1,
@@ -319,7 +317,7 @@ export class BuildingView {
 
     this.plinth = new Mesh(
       unitBox,
-      new MeshStandardMaterial({ color: 0x8a5a3a, roughness: 1 }),
+      new MeshLambertMaterial({ color: 0x8a5a3a }),
     );
     this.plinth.receiveShadow = shadows;
     this.plinth.visible = !ghost;
@@ -327,7 +325,7 @@ export class BuildingView {
 
     this.courtFloor = new Mesh(
       new PlaneGeometry(1, 1),
-      new MeshStandardMaterial({ color: 0xe2c79a, roughness: 1 }),
+      new MeshLambertMaterial({ color: 0xe2c79a }),
     );
     this.courtFloor.rotation.x = -Math.PI / 2;
     this.courtFloor.receiveShadow = shadows;
@@ -388,8 +386,6 @@ export class BuildingView {
     if (!this.opts.ghost) {
       this.wallMaterial.color.setHex(WALL_COLOR[d.material]);
       this.roofMaterial.color.setHex(ROOF_COLOR[d.material]);
-      this.roofMaterial.metalness = d.material === 'zinc' ? 0.5 : 0;
-      this.roofMaterial.roughness = d.material === 'zinc' ? 0.45 : 0.9;
     }
 
     const m = 0.5;
@@ -406,9 +402,8 @@ export class BuildingView {
     if (!floor) {
       floor = new Mesh(
         new PlaneGeometry(1, 1),
-        new MeshStandardMaterial({
+        new MeshLambertMaterial({
           color: FLOOR_BASE,
-          roughness: 1,
           transparent: !!this.opts.ghost,
           opacity: this.opts.ghost ? 0 : 1,
         }),

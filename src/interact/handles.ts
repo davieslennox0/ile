@@ -248,6 +248,8 @@ export class Handles {
         id: `slot-${key}`,
         object: m,
         radius: 0.75,
+        surface: true,
+        near: true,
         enabled: table,
         onHover: (on) => {
           this.hoveredSlot = on ? key : this.hoveredSlot === key ? null : this.hoveredSlot;

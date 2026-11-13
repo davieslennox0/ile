@@ -19,6 +19,7 @@ import {
   LineBasicMaterial,
   Mesh,
   MeshBasicMaterial,
+  MeshLambertMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   Quaternion,
@@ -60,7 +61,7 @@ export class Table {
   readonly sunLabel: Label;
   readonly knob: Mesh<SphereGeometry, MeshStandardMaterial>;
   /** Large ground disc shown at full scale. */
-  readonly ground: Mesh<CircleGeometry, MeshStandardMaterial>;
+  readonly ground: Mesh<CircleGeometry, MeshLambertMaterial>;
 
   constructor() {
     this.group.name = 'ile-table';
@@ -86,7 +87,7 @@ export class Table {
     // Plot: the ground the plinth sits on.
     const plot = new Mesh(
       new PlaneGeometry(PLOT_SIZE, PLOT_SIZE),
-      new MeshStandardMaterial({ color: 0xc58a55, roughness: 1 }),
+      new MeshLambertMaterial({ color: 0xc58a55 }),
     );
     plot.rotation.x = -Math.PI / 2;
     plot.position.y = -0.24;
@@ -95,7 +96,7 @@ export class Table {
 
     this.ground = new Mesh(
       new CircleGeometry(90, 48),
-      new MeshStandardMaterial({ color: 0xb98052, roughness: 1 }),
+      new MeshLambertMaterial({ color: 0xb98052 }),
     );
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = -0.25;

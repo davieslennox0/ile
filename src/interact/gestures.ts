@@ -51,6 +51,8 @@ export interface Target {
   radius: number;
   /** Pick by ray-casting the mesh instead of a sphere (floors, panels). */
   surface?: boolean;
+  /** A surface that can also be pinched directly, within `radius`. */
+  near?: boolean;
   enabled: () => boolean;
   onHover?: (on: boolean) => void;
   /** Fired on release for targets with no drag handler. */
@@ -426,9 +428,11 @@ export class Gestures {
     if (p.near) {
       let bestD = Infinity;
       for (const t of this.targets) {
-        if (t.surface || !t.enabled()) continue;
+        if ((t.surface && !t.near) || !t.enabled()) continue;
         t.object.getWorldPosition(_v1);
-        const reach = t.radius * t.object.getWorldScale(_v2).x + NEAR_REACH;
+        // Surface meshes are stretched to fit; take the scale from their parent.
+        const scaled = t.surface ? (t.object.parent ?? t.object) : t.object;
+        const reach = t.radius * scaled.getWorldScale(_v2).x + NEAR_REACH;
         const dist = _v1.distanceTo(p.near);
         if (dist < reach && dist < bestD) {
           bestD = dist;
@@ -488,7 +492,11 @@ export class Gestures {
       if (justUp || !p.drag.target.enabled()) {
         const t = p.drag.target;
         p.drag = null;
-        if (!this.heldElsewhere(p, t)) {
+        // Only another *drag* keeps it held; with gaze both hands hover it.
+        const stillDragged = Object.values(this.pointers).some(
+          (o) => o !== p && o.drag?.target === t,
+        );
+        if (!stillDragged) {
           t.onDragEnd?.();
           if (justUp && t.onClick && !t.onDrag) t.onClick();
           if (t.onDrag) Sfx.release();
