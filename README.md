@@ -10,27 +10,41 @@ Built for the Meta VR Start Developer Competition 2026 — Productivity track.
 
 Sculpt → Heat-check → ScaleShift inside → Ask the Elder → Fix → Compare.
 
+## Two ways to begin
+
+The app opens on two pinch cards:
+
+- **Build from scratch** — an empty Lagos plot. Lay rooms, mark the courtyard, raise the walls, cut openings, add a roof. A single guidance line tells you the next step.
+- **Start from a Yoruba compound** — the *agbo ilé* template, with a short tutorial.
+
+Rooms are named automatically by size (Parlour, Bedroom 1, Kitchen…) so the heat map and the Elder can refer to them. The heat map, the Elder, ScaleShift and Compare work the same on both. For a scratch-built house, Compare's "before" is the first moment the house has rooms, walls and a roof.
+
 ## Hands only
 
 No controller is needed anywhere. Every gesture also has a pinch-only path, so it works with gaze + pinch on the VR Glasses.
 
 | Gesture | Action |
 |---|---|
-| Pinch + drag an orange wall grip | Push / pull that outer wall (0.5 m grid) |
-| Pinch + pull the roof spire up / down | Wall height |
-| Two-hand pinch on the courtyard, spread / close (or drag the teal corner grip) | Resize the courtyard |
+| Pinch + drag on the empty plot | Lay a room footprint (0.5 m grid, 1 m minimum) |
+| Pinch the open middle enclosed by rooms (or two-hand spread on it) | Mark it as the courtyard |
+| Pinch + drag an orange wall grip | Move that wall line; every room sharing it follows |
+| Pinch + pull the white spire up / down | Raise the walls from the floor; then wall height |
+| Pinch a wall panel | Cut or close a window / doorway |
+| Palm-up menu → **Roof** | Add or remove the roof |
 | Pinch a gold eave grip + twist the wrist (or drag outward) | Roof overhang depth |
+| Two-hand pinch on the courtyard, spread / close (or drag the teal corner grip) | Resize the courtyard |
 | Pinch + drag the knob on the plot ring | Orientation, 15° snaps |
-| Pinch a wall panel | Toggle that window / doorway |
 | Pinch + drag the sun along its arc | Time of day, 8 AM – 6 PM |
 | Point + pinch a room | ScaleShift: sit inside it at 1:1 |
 | Pinch a doorway light (inside) | Walk to the next room |
 | Pinch the carved Elder figure | Ask for advice |
 | Pinch ✓ / swipe a hand away | Accept / reject the Elder's ghost preview |
-| Hold a palm up for 0.5 s (or pinch **Menu**) | Tool menu: Heat, Elder, Compare, Undo, Walls, Reset, Re-centre |
+| Hold a palm up for 0.5 s (or pinch **Menu**) | Tools: Heat, Elder, Compare, Undo, Roof, Walls, New house, Re-centre |
 | Flick an open hand left | Undo |
 
-On desktop (no headset) the same targets work with the mouse, so the build can be judged in a browser tab. Desktop-only shortcuts: `H` heat, `E` ask the Elder, `Y`/`N` accept/reject, `C` compare, `U` undo, `M` wall material, `R` reset, `B` back to table, `S` skip intro.
+On desktop (no headset) the same targets work with the mouse, so the build can be judged in a browser tab. Desktop-only shortcuts: `1` scratch, `2` compound, `H` heat, `E` ask the Elder, `Y`/`N` accept/reject, `C` compare, `U` undo, `F` roof, `M` wall material, `R` new house, `B` back to table, `S` skip intro.
+
+Text is one large panel at a time: the Elder's words replace the instruction while he speaks, a sentence or two per page.
 
 ## The heat score is a heuristic, not physics
 
@@ -87,8 +101,8 @@ src/
   index.ts              IWSDK world bootstrap
   app.ts                app core: state, HUD, modes, Elder flow
   scene/table.ts        table, plot, compass, sun arc
-  model/building.ts     procedural compound: walls, openings, roof, floors
-  model/state.ts        design state, grid snapping, undo, serialise
+  model/building.ts     procedural house: walls per shared line, openings, roofs, floors
+  model/state.ts        rooms on a grid, courtyard, wall lines, naming, undo, serialise
   interact/gestures.ts  pinch / twist / two-hand / palm-up / flick; gaze + mouse
   interact/handles.ts   sculpting grips mapped to design parameters
   heat/score.ts         comfort heuristic (pure, tested)

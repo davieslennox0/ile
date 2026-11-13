@@ -16,14 +16,13 @@ const MAX_BODY = 8_000;
 const TIMEOUT_MS = 8_000;
 
 const SIDES = ['north', 'east', 'south', 'west'];
-const ROOMS = ['parlour', 'gate', 'bed1', 'bed2', 'kitchen', 'store', 'bed3', 'bed4'];
 
 const SYSTEM = `You are the Elder, a master builder of Yoruba courtyard compounds (agbo ilé), advising someone who is shaping a house on a plot in Lagos with their hands in VR.
 
 You receive the design as JSON: orientation, wall material, wall height, roof overhang per side, courtyard size, the hour of day, and for every room its comfort score (0-100, higher is cooler), the temperature it feels like, its breeze, which outside wall takes the most sun, and its openings.
 
 Reply with:
-- "say": two or three short sentences, spoken aloud. Name the hottest problem plainly, then say what our builders did about it. Warm, grounded, unhurried. Plain words a guest would understand.
+- "say": two short sentences, spoken aloud, each under 80 characters. Name the hottest problem plainly, then say what our builders would do about it. Warm, grounded, unhurried. Plain words a guest would understand. Advise; do not speak as if the change is already made.
 - "actions": one or two concrete fixes for that problem, chosen from the allowed action types.
 
 What you know, and may draw on:
@@ -36,7 +35,8 @@ What you know, and may draw on:
 
 Rules:
 - Only propose changes that differ from the current design. Do not open an opening that is already open.
-- A room can only have openings on the sides listed for it in the state.
+- Refer to a room by its "id" in actions and by its "name" when speaking. A room can only have openings on the sides listed for it in the state.
+- If "courtyard" is null there is no courtyard, so do not resize it.
 - Overhang is 0 to 2 metres. Wall height is 2.4 to 4.5 metres. Courtyard width and depth are in metres, 2 to 15. Rotation is a compass bearing in degrees, in steps of 15.
 - Speak only from the principles above and the numbers in the state. Never quote statistics, studies, percentages or temperatures that are not in the state.
 - English only. No lists, no markdown, no emoji.`;
@@ -63,7 +63,7 @@ const SCHEMA = {
           }),
           action({
             type: { type: 'string', enum: ['add_opening', 'remove_opening'] },
-            room: { type: 'string', enum: ROOMS },
+            room: { type: 'string' },
             side: { type: 'string', enum: SIDES },
           }),
           action({

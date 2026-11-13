@@ -10,14 +10,13 @@
 import { scoreDay, scoreDesign } from '../heat/score.ts';
 import {
   LIMITS,
-  ROOM_LABEL,
   SIDES,
+  isOpen,
   normalizeRotation,
   rectD,
   rectW,
+  roomLabel,
   rooms,
-  slotKey,
-  slotSides,
   type Design,
 } from '../model/state.ts';
 import {
@@ -41,16 +40,16 @@ function candidates(d: Design): ElderAction[] {
     }
   }
   for (const room of rooms(d)) {
-    for (const side of slotSides(room)) {
-      if (!d.openings[slotKey(room.id, side)]) {
+    for (const side of SIDES) {
+      if (room.sides[side].type !== 'room' && !isOpen(d, room, side)) {
         out.push({ type: 'add_opening', room: room.id, side });
       }
     }
   }
   out.push({ type: 'set_rotation', value: normalizeRotation(d.rotation + 90) });
-  const w = rectW(d.court);
-  const dep = rectD(d.court);
-  out.push({ type: 'resize_courtyard', width: w + 1, depth: dep + 1 });
+  if (d.court) {
+    out.push({ type: 'resize_courtyard', width: rectW(d.court) + 1, depth: rectD(d.court) + 1 });
+  }
   if (d.wallHeight < LIMITS.wallHeight.max - 0.4) {
     out.push({
       type: 'set_wall_height',
@@ -76,12 +75,12 @@ function best(
 }
 
 function line(d: Design, a: ElderAction): string {
-  const hot = ROOM_LABEL[scoreDesign(d).hottest].toLowerCase();
+  const hot = roomLabel(d, scoreDesign(d).hottest).toLowerCase();
   switch (a.type) {
     case 'set_overhang':
       return `The ${a.side} wall stands naked in the sun. Our builders let the roof reach far past the wall, so the wall rests in shade.`;
     case 'add_opening':
-      return `The ${ROOM_LABEL[a.room].toLowerCase()} holds its breath. Open it to the ${a.side}, so air can enter one side and leave by the other.`;
+      return `The ${roomLabel(d, a.room).toLowerCase()} holds its breath. Open it to the ${a.side}, so air can enter one side and leave by the other.`;
     case 'remove_opening':
       return `That ${a.side} opening lets the sun walk straight in. Close it and let the wall do its work.`;
     case 'set_rotation':

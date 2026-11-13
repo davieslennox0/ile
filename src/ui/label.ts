@@ -27,6 +27,8 @@ export interface LabelOptions {
   round?: boolean;
   bold?: boolean;
   align?: 'center' | 'left';
+  /** Shrink the font until the text fits in this many lines (0 = any). */
+  maxLines?: number;
 }
 
 export const PALETTE = {
@@ -58,6 +60,7 @@ export class Label {
       round: false,
       bold: false,
       align: 'center',
+      maxLines: 0,
       ...options,
     };
     const { width, height, ppm } = this.opts;
@@ -108,12 +111,13 @@ export class Label {
     let lines: string[] = [];
     const weight = opts.bold ? '700' : '500';
     // Shrink the font until the wrapped text fits the panel.
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       ctx.font = `${weight} ${size}px system-ui, "Segoe UI", Roboto, sans-serif`;
       lines = this.wrap(text, maxW);
       const tooTall = lines.length * size * 1.22 > H - pad * 0.9;
       const tooWide = lines.some((l) => ctx.measureText(l).width > maxW);
-      if (!tooTall && !tooWide) break;
+      const tooMany = opts.maxLines > 0 && lines.length > opts.maxLines;
+      if (!tooTall && !tooWide && !tooMany) break;
       size *= 0.86;
     }
     ctx.fillStyle = fg ?? opts.fg;

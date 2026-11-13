@@ -36,6 +36,8 @@ export interface DragInfo {
   position: Vector3;
   /** World-space position of the hand when the grab began. */
   start: Vector3;
+  /** World-space point on the target that was grabbed (ray hit for surfaces). */
+  grab: Vector3;
   /** Wrist twist since the grab, radians. */
   twist: number;
   /** With two hands on one target: current spread / spread at second grab. */
@@ -53,6 +55,8 @@ export interface Target {
   surface?: boolean;
   /** A surface that can also be pinched directly, within `radius`. */
   near?: boolean;
+  /** A horizontal surface: mouse drags slide along it, not toward the camera. */
+  flat?: boolean;
   enabled: () => boolean;
   onHover?: (on: boolean) => void;
   /** Fired on release for targets with no drag handler. */
@@ -65,6 +69,7 @@ export interface Target {
 interface Drag {
   target: Target;
   start: Vector3;
+  grab: Vector3;
   twist: number;
   /** Distance between both hands when the second one joined. */
   pairStart: number;
@@ -85,6 +90,8 @@ interface Pointer {
   wasDown: boolean;
   jointPinch: boolean;
   hover: Target | null;
+  /** World point where the pointer meets the hovered target. */
+  hit: Vector3;
   drag: Drag | null;
   // Whole-hand gesture tracking.
   prevPos: Vector3;
@@ -128,6 +135,7 @@ function makePointer(id: PointerId): Pointer {
     wasDown: false,
     jointPinch: false,
     hover: null,
+    hit: new Vector3(),
     drag: null,
     prevPos: new Vector3(),
     hasPrevPos: false,
@@ -437,6 +445,7 @@ export class Gestures {
         if (dist < reach && dist < bestD) {
           bestD = dist;
           best = t;
+          p.hit.copy(_v1);
         }
       }
       if (best) return best;
@@ -456,6 +465,7 @@ export class Gestures {
       if (score < bestScore) {
         bestScore = score;
         best = t;
+        p.hit.copy(_v1);
       }
     }
     if (best) return best;
@@ -471,6 +481,7 @@ export class Gestures {
       if (hits.length > 0 && hits[0].distance < bestDist) {
         bestDist = hits[0].distance;
         best = t;
+        p.hit.copy(hits[0].point);
       }
     }
     return best;
@@ -525,14 +536,19 @@ export class Gestures {
       );
       let plane: Plane | null = null;
       if (p.id === 'mouse') {
-        t.object.getWorldPosition(_v1);
-        this.world.camera.getWorldDirection(_v2);
-        plane = new Plane().setFromNormalAndCoplanarPoint(_v2, _v1);
+        if (t.flat) {
+          plane = new Plane().setFromNormalAndCoplanarPoint(UP, p.hit);
+        } else {
+          t.object.getWorldPosition(_v1);
+          this.world.camera.getWorldDirection(_v2);
+          plane = new Plane().setFromNormalAndCoplanarPoint(_v2, _v1);
+        }
         p.ray.intersectPlane(plane, p.handPos);
       }
       p.drag = {
         target: t,
         start: p.handPos.clone(),
+        grab: p.hit.clone(),
         twist: 0,
         pairStart: other ? other.handPos.distanceTo(p.handPos) : 0,
         plane,
@@ -560,6 +576,7 @@ export class Gestures {
       delta: _v1.copy(p.handPos).sub(drag.start).clone(),
       position: p.handPos,
       start: drag.start,
+      grab: drag.grab,
       twist: drag.twist,
       spread,
       twoHands,

@@ -7,19 +7,20 @@
 import {
   LIMITS,
   MATERIALS,
-  ROOM_IDS,
-  ROOM_LABEL,
   SIDES,
+  isOpen,
   isValidSlot,
   rectD,
   rectW,
+  bounds,
+  roomLabel,
+  rooms,
   setCourtSize,
   setMaterial,
   setOpening,
   setOverhang,
   setRotation,
   setWallHeight,
-  slotKey,
   type Design,
   type Material,
   type RoomId,
@@ -48,10 +49,9 @@ export const MAX_SAY = 320;
 const isNum = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v);
 const isSide = (v: unknown): v is Side => SIDES.includes(v as Side);
-const isRoom = (v: unknown): v is RoomId => ROOM_IDS.includes(v as RoomId);
 
-/** Validate one untrusted action. Returns a clean copy or null. */
-export function validateAction(raw: unknown): ElderAction | null {
+/** Validate one untrusted action against a design. Returns a clean copy or null. */
+export function validateAction(raw: unknown, d: Design): ElderAction | null {
   if (!raw || typeof raw !== 'object') return null;
   const a = raw as Record<string, unknown>;
   switch (a.type) {
@@ -63,8 +63,8 @@ export function validateAction(raw: unknown): ElderAction | null {
     }
     case 'add_opening':
     case 'remove_opening': {
-      if (!isRoom(a.room) || !isSide(a.side)) return null;
-      if (!isValidSlot(a.room, a.side)) return null;
+      if (typeof a.room !== 'string' || !isSide(a.side)) return null;
+      if (!isValidSlot(d, a.room, a.side)) return null;
       return { type: a.type, room: a.room, side: a.side };
     }
     case 'set_rotation': {
@@ -73,7 +73,7 @@ export function validateAction(raw: unknown): ElderAction | null {
     }
     case 'resize_courtyard': {
       if (!isNum(a.width) || !isNum(a.depth)) return null;
-      if (a.width < LIMITS.minCourt || a.depth < LIMITS.minCourt) return null;
+      if (!d.court || a.width < LIMITS.minCourt || a.depth < LIMITS.minCourt) return null;
       if (a.width > 15 || a.depth > 15) return null;
       return { type: 'resize_courtyard', width: a.width, depth: a.depth };
     }
@@ -137,7 +137,7 @@ export function validateReply(
   const actions: ElderAction[] = [];
   let working = d;
   for (const item of r.actions) {
-    const a = validateAction(item);
+    const a = validateAction(item, working);
     if (!a || !actionChanges(working, a)) continue;
     actions.push(a);
     working = applyAction(working, a);
@@ -147,16 +147,16 @@ export function validateReply(
 }
 
 /** Short human label for a proposed action, shown beside its ghost preview. */
-export function describeAction(a: ElderAction): string {
+export function describeAction(a: ElderAction, d: Design): string {
   switch (a.type) {
     case 'set_overhang':
       return a.side === 'all'
         ? `Deepen all eaves to ${a.value.toFixed(1)} m`
-        : `Set ${a.side} eaves to ${a.value.toFixed(1)} m`;
+        : `Deepen the ${a.side} eaves to ${a.value.toFixed(1)} m`;
     case 'add_opening':
-      return `Open the ${ROOM_LABEL[a.room].toLowerCase()} to the ${a.side}`;
+      return `Open the ${roomLabel(d, a.room).toLowerCase()} to the ${a.side}`;
     case 'remove_opening':
-      return `Close the ${a.side} opening of the ${ROOM_LABEL[a.room].toLowerCase()}`;
+      return `Close the ${a.side} opening of the ${roomLabel(d, a.room).toLowerCase()}`;
     case 'set_rotation':
       return `Turn the house to ${a.value}°`;
     case 'resize_courtyard':
@@ -172,28 +172,35 @@ export function describeAction(a: ElderAction): string {
 export function elderPayload(
   d: Design,
   scores: {
-    now: { overall: number; rooms: Record<string, { comfort: number; feel: number; breeze: string; hotSide: string | null }>; hottest: string };
+    now: {
+      overall: number;
+      rooms: Record<string, { comfort: number; feel: number; breeze: string; hotSide: string | null }>;
+      hottest: string;
+    };
     day: { overall: number };
   },
 ) {
+  const b = bounds(d);
   return {
     hour: d.hour,
     rotation: d.rotation,
     material: d.material,
     wallHeight: d.wallHeight,
     overhang: d.overhang,
-    footprint: { width: rectW(d.outer), depth: rectD(d.outer) },
-    courtyard: { width: rectW(d.court), depth: rectD(d.court) },
-    rooms: ROOM_IDS.map((id) => ({
-      id,
-      name: ROOM_LABEL[id],
-      comfort: scores.now.rooms[id].comfort,
-      feelsLikeC: scores.now.rooms[id].feel,
-      breeze: scores.now.rooms[id].breeze,
-      sunniestWall: scores.now.rooms[id].hotSide,
-      openings: SIDES.filter((s) => slotKey(id, s) in d.openings).map((s) => ({
+    footprint: { width: rectW(b), depth: rectD(b) },
+    courtyard: d.court ? { width: rectW(d.court), depth: rectD(d.court) } : null,
+    rooms: rooms(d).map((room) => ({
+      id: room.id,
+      name: room.label,
+      comfort: scores.now.rooms[room.id].comfort,
+      feelsLikeC: scores.now.rooms[room.id].feel,
+      breeze: scores.now.rooms[room.id].breeze,
+      sunniestWall: scores.now.rooms[room.id].hotSide,
+      // Only sides that face outside or the courtyard can move air.
+      openings: SIDES.filter((s) => room.sides[s].type !== 'room').map((s) => ({
         side: s,
-        open: d.openings[slotKey(id, s)],
+        faces: room.sides[s].type === 'court' ? 'courtyard' : 'outside',
+        open: isOpen(d, room, s),
       })),
     })),
     hottestRoom: scores.now.hottest,

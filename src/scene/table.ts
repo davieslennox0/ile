@@ -60,6 +60,8 @@ export class Table {
   readonly sunBall: Mesh<SphereGeometry, MeshBasicMaterial>;
   readonly sunLabel: Label;
   readonly knob: Mesh<SphereGeometry, MeshStandardMaterial>;
+  /** The plot tile: pinch and drag on it to lay rooms. */
+  readonly plot: Mesh<PlaneGeometry, MeshLambertMaterial>;
   /** Large ground disc shown at full scale. */
   readonly ground: Mesh<CircleGeometry, MeshLambertMaterial>;
 
@@ -85,14 +87,14 @@ export class Table {
     this.group.add(this.site);
 
     // Plot: the ground the plinth sits on.
-    const plot = new Mesh(
+    this.plot = new Mesh(
       new PlaneGeometry(PLOT_SIZE, PLOT_SIZE),
       new MeshLambertMaterial({ color: 0xc58a55 }),
     );
-    plot.rotation.x = -Math.PI / 2;
-    plot.position.y = -0.24;
-    plot.receiveShadow = true;
-    this.site.add(plot);
+    this.plot.rotation.x = -Math.PI / 2;
+    this.plot.position.y = -0.24;
+    this.plot.receiveShadow = true;
+    this.site.add(this.plot);
 
     this.ground = new Mesh(
       new CircleGeometry(90, 48),

@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import {
-  applyActions,
-  validateAction,
-  validateReply,
-} from '../src/elder/actions.ts';
+import { applyActions, validateAction, validateReply } from '../src/elder/actions.ts';
 import { localElder } from '../src/elder/local.ts';
 import {
   ambientTemp,
@@ -17,21 +13,47 @@ import {
 } from '../src/heat/score.ts';
 import {
   History,
+  addRoom,
+  fitRoom,
   defaultDesign,
   deserialize,
-  normalize,
+  enclosedGap,
+  findEnclosedGap,
+  isComplete,
+  lines,
+  moveLine,
   rectD,
   rectW,
+  roomById,
   rooms,
+  scratchDesign,
   serialize,
+  setCourt,
   setCourtSize,
   setMaterial,
   setOpening,
-  setOuterWall,
   setOverhang,
+  setRoof,
   setRotation,
-  slotKeys,
+  setWallHeight,
+  type Design,
 } from '../src/model/state.ts';
+
+/** Four rooms around an open middle, laid one by one as a user would. */
+function scratchRing(): Design {
+  let d = scratchDesign();
+  for (const r of [
+    { x0: -5, x1: 5, z0: -6, z1: -2 }, // north
+    { x0: -5, x1: 5, z0: 2, z1: 6 }, // south
+    { x0: -5, x1: -2, z0: -2, z1: 2 }, // west
+    { x0: 2, x1: 5, z0: -2, z1: 2 }, // east
+  ]) {
+    const next = addRoom(d, r);
+    assert.ok(next, 'room fits');
+    d = next;
+  }
+  return d;
+}
 
 test('sun: east in the morning, west in the afternoon, high at noon', () => {
   const am = sunVector(8);
@@ -52,11 +74,23 @@ test('ambient temperature peaks mid-afternoon', () => {
 });
 
 test('deeper eaves leave less wall in the sun', () => {
-  const shallow = litFraction(0.3, 3, 0.67, 0.63);
-  const deep = litFraction(1.5, 3, 0.67, 0.63);
-  assert.ok(deep < shallow);
+  assert.ok(litFraction(1.5, 3, 0.67, 0.63) < litFraction(0.3, 3, 0.67, 0.63));
   assert.equal(litFraction(1, 3, 0, 0.5), 0);
   assert.equal(litFraction(0, 3, 0.5, 0.5), 1);
+});
+
+test('the compound template: eight named rooms around a courtyard', () => {
+  const d = defaultDesign();
+  const rs = rooms(d);
+  assert.equal(rs.length, 8);
+  assert.ok(isComplete(d));
+  const parlour = roomById(d, 'parlour');
+  assert.equal(parlour.label, 'Parlour');
+  assert.deepEqual(parlour.exterior, ['north']);
+  assert.deepEqual(parlour.courtSides, ['south']);
+  assert.equal(parlour.sides.east.type, 'room');
+  assert.equal(parlour.sides.east.neighbour, 'kitchen');
+  assert.deepEqual(roomById(d, 'kitchen').exterior, ['north', 'east']);
 });
 
 test('all scores stay within 0–100 for every hour', () => {
@@ -71,7 +105,7 @@ test('all scores stay within 0–100 for every hour', () => {
   }
 });
 
-test('the west bedroom is the afternoon problem in the start template', () => {
+test('the west bedroom is the afternoon problem in the template', () => {
   const s = scoreDesign(defaultDesign(), 15);
   assert.equal(s.rooms.bed2.hotSide, 'west');
   assert.ok(s.rooms.bed2.comfort < s.rooms.bed1.comfort);
@@ -80,8 +114,7 @@ test('the west bedroom is the afternoon problem in the start template', () => {
 test('west eaves help the west bedroom in the afternoon', () => {
   const d = defaultDesign();
   const before = scoreDesign(d, 15).rooms.bed2.comfort;
-  const after = scoreDesign(setOverhang(d, 'west', 1.5), 15).rooms.bed2.comfort;
-  assert.ok(after > before);
+  assert.ok(scoreDesign(setOverhang(d, 'west', 1.5), 15).rooms.bed2.comfort > before);
 });
 
 test('cross-ventilation raises comfort and reads as breezy', () => {
@@ -93,6 +126,12 @@ test('cross-ventilation raises comfort and reads as breezy', () => {
   assert.ok(after.comfort > before.comfort);
 });
 
+test('doors between rooms do not count as ventilation', () => {
+  const d = defaultDesign();
+  // The store only has doors to its neighbours: still air.
+  assert.equal(scoreDesign(d, 15).rooms.store.breeze, 'still');
+});
+
 test('earth beats block beats zinc', () => {
   const d = defaultDesign();
   const earth = scoreDay(d).overall;
@@ -101,9 +140,13 @@ test('earth beats block beats zinc', () => {
   assert.ok(earth > block && block > zinc);
 });
 
-test('a bigger courtyard improves the day score', () => {
+test('a bigger courtyard improves the day score and keeps rooms attached', () => {
   const d = defaultDesign();
-  assert.ok(scoreDay(setCourtSize(d, 5, 7)).overall > scoreDay(d).overall);
+  const bigger = setCourtSize(d, 5, 7);
+  assert.equal(rectW(bigger.court!), 5);
+  assert.equal(rectD(bigger.court!), 7);
+  assert.equal(roomById(bigger, 'parlour').sides.south.type, 'court');
+  assert.ok(scoreDay(bigger).overall > scoreDay(d).overall);
 });
 
 test('turning the house moves the west bedroom out of the afternoon sun', () => {
@@ -113,32 +156,90 @@ test('turning the house moves the west bedroom out of the afternoon sun', () => 
   assert.ok(turned.comfort > scoreDesign(d, 15).rooms.bed2.comfort);
 });
 
-test('normalize keeps the compound buildable', () => {
-  const d = normalize({
-    ...defaultDesign(),
-    outer: { x0: -0.2, x1: 50, z0: 3, z1: 3.1 },
-    wallHeight: 99,
-    rotation: 367,
-  });
-  for (const r of rooms(d)) {
-    assert.ok(rectW(r) >= 2 && rectD(r) >= 2, `${r.id} has room`);
-  }
-  assert.ok(d.outer.x1 <= 10);
-  assert.equal(d.wallHeight, 4.5);
-  assert.equal(d.rotation, 0);
-  assert.equal(Object.keys(d.openings).length, slotKeys(d).length);
+test('dragging a wall line moves every room that shares it', () => {
+  const d = defaultDesign();
+  const moved = moveLine(d, 'x', 5, 6.26);
+  for (const id of ['kitchen', 'bed1', 'bed3']) assert.equal(roomById(moved, id).x1, 6.5);
+  assert.equal(roomById(moved, 'parlour').x1, 1.5, 'inner rooms stay put');
+  // A line cannot be dragged through the rooms beside it.
+  const squeezed = moveLine(d, 'x', 5, -20);
+  assert.ok(rectW(roomById(squeezed, 'bed1')) >= 1);
+  assert.equal(lines(d).length, 8);
 });
 
-test('walls snap to the half-metre grid', () => {
-  const d = setOuterWall(defaultDesign(), 'east', 6.26);
-  assert.equal(d.outer.x1, 6.5);
+test('scratch: rooms snap to the grid and cannot overlap or be tiny', () => {
+  let d = scratchDesign();
+  assert.equal(isComplete(d), false);
+  const one = addRoom(d, { x0: -4.9, x1: 0.1, z0: -3.2, z1: 0.26 });
+  assert.ok(one);
+  d = one;
+  assert.deepEqual(
+    { x0: d.rooms[0].x0, x1: d.rooms[0].x1, z0: d.rooms[0].z0, z1: d.rooms[0].z1 },
+    { x0: -5, x1: 0, z0: -3, z1: 0.5 },
+  );
+  assert.equal(addRoom(d, { x0: -1, x1: 3, z0: -1, z1: 2 }), null, 'overlap is refused');
+  assert.equal(addRoom(d, { x0: 2, x1: 2.5, z0: 2, z1: 6 }), null, 'too thin is refused');
+  assert.ok(addRoom(d, { x0: 0, x1: 3, z0: -3, z1: 0.5 }), 'touching is fine');
+});
+
+test('scratch: a dragged room butts up against its neighbours', () => {
+  const d = addRoom(addRoom(scratchDesign(), { x0: -5, x1: 5, z0: -6, z1: -2 })!, { x0: -5, x1: 5, z0: 2, z1: 6 })!;
+  // Dragged a little too far south: pulled back to the south room's edge.
+  assert.deepEqual(fitRoom(d, { x: -5, z: -2 }, { x: -1.8, z: 2.3 }), { x0: -5, x1: -2, z0: -2, z1: 2 });
+  // Dragged up into the north room from below.
+  assert.deepEqual(fitRoom(d, { x: 5, z: 2 }, { x: 2, z: -2.6 }), { x0: 2, x1: 5, z0: -2, z1: 2 });
+  assert.equal(fitRoom(d, { x: 0, z: -4 }, { x: 3, z: -3 }), null, 'starting inside a room');
+  assert.equal(fitRoom(d, { x: 0, z: 0 }, { x: 0.2, z: 0.3 }), null, 'too small');
+});
+
+test('scratch: the enclosed middle is found and becomes the courtyard', () => {
+  let d = scratchRing();
+  assert.equal(enclosedGap(d, 0, 0)?.x0, -2);
+  assert.deepEqual(findEnclosedGap(d), { x0: -2, x1: 2, z0: -2, z1: 2 });
+  assert.equal(enclosedGap(d, -3, 0), null, 'inside a room');
+  assert.equal(enclosedGap(d, 8, 0), null, 'not enclosed');
+  d = setCourt(d, findEnclosedGap(d));
+  const west = rooms(d).find((r) => r.x1 === -2);
+  assert.ok(west);
+  assert.deepEqual(west.courtSides, ['east']);
+  assert.deepEqual(west.exterior, ['west']);
+});
+
+test('scratch: rooms are named by size, and a finished house scores', () => {
+  let d = setCourt(scratchRing(), { x0: -2, x1: 2, z0: -2, z1: 2 });
+  const labels = rooms(d).map((r) => r.label).sort();
+  assert.deepEqual(labels, ['Bedroom 1', 'Bedroom 2', 'Kitchen', 'Parlour']);
+  d = setWallHeight(d, 3);
+  assert.equal(isComplete(d), false, 'no roof yet');
+  const roofless = scoreDay(d).overall;
+  d = setRoof(d, true);
+  assert.ok(isComplete(d));
+  assert.ok(scoreDay(d).overall > roofless, 'a roof helps');
+  // Opening the rooms to the courtyard and the outside cools the house.
+  let open = d;
+  for (const r of rooms(d)) {
+    for (const s of [...r.exterior.slice(0, 1), ...r.courtSides]) open = setOpening(open, r.id, s, true);
+  }
+  assert.ok(scoreDay(open).overall > scoreDay(d).overall + 5);
+});
+
+test('wall height is 0 until raised, then clamps to 2.4–4.5 m', () => {
+  const d = scratchRing();
+  assert.equal(setWallHeight(d, 0.8).wallHeight, 0);
+  assert.equal(setWallHeight(d, 1.6).wallHeight, 2.4);
+  assert.equal(setWallHeight(d, 99).wallHeight, 4.5);
 });
 
 test('serialize round-trips and rejects junk', () => {
   const d = setOverhang(defaultDesign(), 'west', 1.2);
   assert.deepEqual(deserialize(serialize(d)), d);
+  const s = setCourt(scratchRing(), { x0: -2, x1: 2, z0: -2, z1: 2 });
+  assert.deepEqual(deserialize(serialize(s)), s);
   assert.equal(deserialize('not json'), null);
-  assert.equal(deserialize('{"v":2}'), null);
+  assert.equal(deserialize('{"v":1}'), null);
+  const overlapping = JSON.parse(serialize(d));
+  overlapping.rooms[0].x1 = 9;
+  assert.equal(deserialize(JSON.stringify(overlapping)), null);
 });
 
 test('history undoes edits in order', () => {
@@ -153,13 +254,15 @@ test('history undoes edits in order', () => {
 });
 
 test('action validation rejects anything outside the vocabulary', () => {
-  assert.ok(validateAction({ type: 'set_overhang', side: 'west', value: 1.2 }));
-  assert.equal(validateAction({ type: 'set_overhang', side: 'up', value: 1 }), null);
-  assert.equal(validateAction({ type: 'set_overhang', side: 'west', value: 9 }), null);
-  assert.equal(validateAction({ type: 'add_opening', room: 'bed2', side: 'north' }), null);
-  assert.ok(validateAction({ type: 'add_opening', room: 'bed2', side: 'east' }));
-  assert.equal(validateAction({ type: 'demolish' }), null);
-  assert.equal(validateAction(null), null);
+  const d = defaultDesign();
+  assert.ok(validateAction({ type: 'set_overhang', side: 'west', value: 1.2 }, d));
+  assert.equal(validateAction({ type: 'set_overhang', side: 'up', value: 1 }, d), null);
+  assert.equal(validateAction({ type: 'set_overhang', side: 'west', value: 9 }, d), null);
+  assert.equal(validateAction({ type: 'add_opening', room: 'attic', side: 'north' }, d), null);
+  assert.ok(validateAction({ type: 'add_opening', room: 'bed2', side: 'east' }, d));
+  assert.equal(validateAction({ type: 'resize_courtyard', width: 5, depth: 5 }, scratchRing()), null);
+  assert.equal(validateAction({ type: 'demolish' }, d), null);
+  assert.equal(validateAction(null, d), null);
 });
 
 test('reply validation drops no-ops and caps the action count', () => {
@@ -184,18 +287,23 @@ test('reply validation drops no-ops and caps the action count', () => {
   assert.equal(validateReply({ actions: [] }, d), null);
 });
 
-test('the built-in elder always proposes moves that raise the score', () => {
-  let d = defaultDesign();
-  for (let i = 0; i < 6; i += 1) {
-    const reply = localElder(d);
-    assert.ok(reply.say.length > 0);
-    if (reply.actions.length === 0) break;
-    assert.ok(reply.actions.length <= 2);
-    const next = applyActions(d, reply.actions);
-    assert.ok(scoreDay(next).overall >= scoreDay(d).overall);
-    d = next;
+test('the built-in elder only proposes moves that raise the score', () => {
+  for (const start of [
+    defaultDesign(),
+    setRoof(setWallHeight(setCourt(scratchRing(), { x0: -2, x1: 2, z0: -2, z1: 2 }), 3), true),
+  ]) {
+    let d = start;
+    for (let i = 0; i < 6; i += 1) {
+      const reply = localElder(d);
+      assert.ok(reply.say.length > 0);
+      if (reply.actions.length === 0) break;
+      assert.ok(reply.actions.length <= 2);
+      const next = applyActions(d, reply.actions);
+      assert.ok(scoreDay(next).overall >= scoreDay(d).overall);
+      d = next;
+    }
+    assert.ok(scoreDay(d).overall > scoreDay(start).overall + 8);
   }
-  assert.ok(scoreDay(d).overall > scoreDay(defaultDesign()).overall + 8);
 });
 
 test('heat colours run from red (hot) to blue (cool)', () => {

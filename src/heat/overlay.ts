@@ -5,7 +5,7 @@
 
 import { Color, Group, Vector3 } from '@iwsdk/core';
 import type { BuildingView } from '../model/building.ts';
-import { ROOM_IDS, rectCx, rectCz, rooms, type Design, type RoomId } from '../model/state.ts';
+import { rectCx, rectCz, rooms, type Design, type RoomId } from '../model/state.ts';
 import { Label } from '../ui/label.ts';
 import { comfortColor, type DesignScore } from './score.ts';
 
@@ -18,18 +18,6 @@ export class HeatOverlay {
   private hovered: RoomId | null = null;
 
   constructor() {
-    for (const id of ROOM_IDS) {
-      const label = new Label({
-        width: 2.3,
-        height: 1.5,
-        ppm: 70,
-        fontScale: 0.6,
-        bold: true,
-        bg: 'rgba(30, 18, 10, 0.82)',
-      });
-      this.byRoom.set(id, label);
-      this.labels.add(label.mesh);
-    }
     this.labels.visible = false;
   }
 
@@ -38,26 +26,40 @@ export class HeatOverlay {
     else if (this.hovered === room) this.hovered = null;
   }
 
+  private labelFor(id: RoomId): Label {
+    let label = this.byRoom.get(id);
+    if (!label) {
+      label = new Label({
+        width: 2.6,
+        height: 1.7,
+        ppm: 70,
+        fontScale: 0.62,
+        bold: true,
+        bg: 'rgba(30, 18, 10, 0.82)',
+      });
+      this.byRoom.set(id, label);
+      this.labels.add(label.mesh);
+    }
+    return label;
+  }
+
   update(view: BuildingView, d: Design, score: DesignScore, on: boolean, showNumbers: boolean): void {
     this.labels.visible = on && showNumbers;
-    for (const room of rooms(d)) {
+    const rs = rooms(d);
+    const live = new Set(rs.map((r) => r.id));
+    for (const [id, label] of this.byRoom) label.mesh.visible = live.has(id);
+    for (const room of rs) {
       const s = score.rooms[room.id];
+      if (!s) continue;
       const hot = this.hovered === room.id;
-      if (on) {
-        const [r, g, b] = comfortColor(s.comfort);
-        view.setFloorColor(room.id, _c.setRGB(r, g, b), hot ? 0.55 : 0.22);
-      } else if (hot) {
-        view.setFloorColor(room.id, _c.setHex(0xffe2a0), 0.45);
-      } else {
-        view.setFloorColor(room.id, null);
-      }
-      const label = this.byRoom.get(room.id);
-      if (label) {
-        label.mesh.position.set(rectCx(room), d.wallHeight + 2.6, rectCz(room));
-        const [r, g, b] = comfortColor(s.comfort);
-        const css = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
-        label.setText(`${s.comfort}`, '#ffffff', css);
-      }
+      const [r, g, b] = comfortColor(s.comfort);
+      if (on) view.setFloorColor(room.id, _c.setRGB(r, g, b), hot ? 0.55 : 0.22);
+      else if (hot) view.setFloorColor(room.id, _c.setHex(0xffe2a0), 0.45);
+      else view.setFloorColor(room.id, null);
+      const label = this.labelFor(room.id);
+      label.mesh.position.set(rectCx(room), Math.max(2.4, d.wallHeight) + 2.8, rectCz(room));
+      const css = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+      label.setText(`${s.comfort}`, '#ffffff', css);
     }
   }
 

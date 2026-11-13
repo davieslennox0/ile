@@ -8,6 +8,7 @@
 import { Group, Mesh, MeshBasicMaterial, SphereGeometry } from '@iwsdk/core';
 import type { App } from '../app.ts';
 import { ELDER_GREETING } from '../elder/local.ts';
+import { findEnclosedGap, type Design } from '../model/state.ts';
 import { MINI_SCALE } from '../scene/table.ts';
 
 type Step = 'greet' | 'pull' | 'heat' | 'elder' | 'accept' | 'inside' | 'return' | 'done';
@@ -23,43 +24,43 @@ interface StepDef {
 
 const STEPS: Record<Exclude<Step, 'done'>, StepDef> = {
   greet: {
-    hint: 'Welcome to Ilé. Sit back — you only need your hands.',
+    hint: 'Welcome to Ilé. You only need your hands.',
     timeout: 6,
     next: 'pull',
     until: [],
   },
   pull: {
-    hint: 'Pinch the glowing orange grip and pull the wall outward.',
+    hint: 'Pinch an orange grip and pull the wall.',
     timeout: 35,
     next: 'heat',
     until: ['edit:wall'],
   },
   heat: {
-    hint: 'This is 3 PM. Red rooms are baking; blue rooms are cool.',
+    hint: '3 PM: red rooms are baking, blue rooms are cool.',
     timeout: 7,
     next: 'elder',
     until: [],
   },
   elder: {
-    hint: 'Pinch the Elder — the carved figure — to ask for advice.',
+    hint: 'Pinch the Elder figure to ask for advice.',
     timeout: 12,
     next: 'accept',
     until: ['proposal'],
   },
   accept: {
-    hint: 'The blue ghost is the Elder’s fix. Pinch ✓ to accept, or swipe it away.',
+    hint: 'Pinch \u2713 to accept the ghost, or swipe it away.',
     timeout: 30,
     next: 'inside',
     until: ['accepted', 'rejected'],
   },
   inside: {
-    hint: 'Now step inside: point at any room and pinch.',
+    hint: 'Step inside: point at a room and pinch.',
     timeout: 45,
     next: 'return',
     until: ['inside'],
   },
   return: {
-    hint: 'Feel the shade. Turn a palm up — or pinch Table — to go back.',
+    hint: 'Feel the shade. Palm up, or pinch Table, to go back.',
     timeout: 40,
     next: 'done',
     until: ['table'],
@@ -67,6 +68,18 @@ const STEPS: Record<Exclude<Step, 'done'>, StepDef> = {
 };
 
 export const FREE_HINT = 'Sculpt freely. Hold a palm up for tools.';
+
+/** The next thing to do when building a house from an empty plot. */
+export function scratchHint(d: Design): string {
+  if (d.rooms.length === 0) return 'Pinch and drag on the plot to lay your first room.';
+  if (d.wallHeight === 0) {
+    if (d.rooms.length < 3) return 'Lay more rooms around an open middle.';
+    if (!d.court && findEnclosedGap(d)) return 'Pinch the open middle to make it a courtyard.';
+    return 'Pinch the white spire and pull up to raise the walls.';
+  }
+  if (!d.roof) return 'Hold a palm up and choose Roof.';
+  return FREE_HINT;
+}
 
 export class Onboarding {
   active = false;
@@ -107,10 +120,10 @@ export class Onboarding {
     this.app.say(ELDER_GREETING);
   }
 
-  skip(): void {
+  skip(silent = false): void {
     if (!this.active) return;
     this.finish();
-    this.app.toast('Intro skipped');
+    if (!silent) this.app.toast('Intro skipped');
   }
 
   private finish(): void {
@@ -152,7 +165,10 @@ export class Onboarding {
     if (!this.app.gestures.dragging && this.app.mode !== 'shifting') this.t += delta;
 
     if (this.step === 'pull') {
-      const grip = this.app.handles.wall.east.position;
+      // Demonstrate on the easternmost wall line.
+      const xs = this.app.handles.lineGrips.filter((g) => g.visible && g.userData.axis === 'x');
+      if (xs.length === 0) return;
+      const grip = xs.reduce((best, g) => (g.position.x > best.position.x ? g : best)).position;
       const pull = (this.clock % 2.2) / 2.2;
       const eased = pull < 0.25 ? 0 : Math.min(1, (pull - 0.25) / 0.55);
       this.hand.position.set(grip.x + eased * 2.5, grip.y, grip.z);

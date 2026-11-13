@@ -37,14 +37,17 @@ import { BuildingView, slotPlacements } from './model/building.ts';
 import {
   History,
   MATERIALS,
-  ROOM_LABEL,
   cloneDesign,
   defaultDesign,
   designChanged,
   deserialize,
+  isComplete,
+  roomLabel,
+  scratchDesign,
   serialize,
   setHour as withHour,
   setMaterial,
+  setRoof,
   type Design,
   type RoomId,
 } from './model/state.ts';
@@ -53,13 +56,16 @@ import { Table } from './scene/table.ts';
 import { Compare } from './ui/compare.ts';
 import { Label, PALETTE } from './ui/label.ts';
 import { PalmMenu, type MenuItem } from './ui/menu.ts';
-import { FREE_HINT, Onboarding } from './ui/onboarding.ts';
+import { FREE_HINT, Onboarding, scratchHint } from './ui/onboarding.ts';
 
-export type Mode = 'table' | 'shifting' | 'inside';
+/** `start` is the opening choice between scratch and the compound. */
+export type Mode = 'start' | 'table' | 'shifting' | 'inside';
 
-const STORAGE_KEY = 'ile.design.v1';
+const STORAGE_KEY = 'ile.design.v2';
 const TABLE_ROOF = 0.5;
 const HEAT_ROOF = 0.14;
+/** Metres per second that walls grow when raised. */
+const WALL_GROW = 4.5;
 
 const _pos = new Vector3();
 const _quat = new Quaternion();
@@ -77,6 +83,20 @@ function isSoftwareRenderer(world: World): boolean {
   }
 }
 
+/** Break speech into short pages that fit two large lines. */
+function pages(text: string, max = 84): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) ?? [text];
+  const out: string[] = [];
+  for (const raw of sentences) {
+    const sentence = raw.trim();
+    if (!sentence) continue;
+    const last = out[out.length - 1];
+    if (last && last.length + sentence.length + 1 <= max) out[out.length - 1] = `${last} ${sentence}`;
+    else out.push(sentence);
+  }
+  return out;
+}
+
 export class App {
   readonly world: World;
   readonly gestures: Gestures;
@@ -87,7 +107,7 @@ export class App {
   readonly shift: ScaleShift;
 
   design: Design;
-  mode: Mode = 'table';
+  mode: Mode = 'start';
   room: RoomId | null = null;
   heatOn = false;
   compareOn = false;
@@ -99,32 +119,39 @@ export class App {
   private readonly compare = new Compare();
   private readonly onboarding: Onboarding;
   private readonly history = new History();
-  private readonly before: Design;
+  /** The design Compare measures against; null until there is a whole house. */
+  private before: Design | null = null;
+  private fromScratch = false;
   private editStart: Design | null = null;
   private now: DesignScore;
   private day: DayScore;
+  private shownHeight = 0;
 
   private readonly sun = new DirectionalLight(0xfff0d0, 2.6);
   private readonly hud = new Group();
   private readonly badge: Label;
-  private readonly subtitle: Label;
-  private readonly hint: Label;
+  /** The one text panel: Elder speech, else a toast, else the current hint. */
+  private readonly panel: Label;
   private readonly accept: Label;
   private readonly reject: Label;
   private readonly back: Label;
   private readonly skip: Label;
   private readonly menuToken: Label;
+  private readonly cards: { label: Label; choose: () => void }[] = [];
   private readonly elder = new Group();
   private readonly halo: Mesh<TorusGeometry, MeshBasicMaterial>;
 
   private proposal: ElderReply | null = null;
+  private proposalText = '';
   private elderBusy = false;
-  private hintText = FREE_HINT;
+  private hintText = 'Pinch a card to begin.';
+  private toastText = '';
   private toastTime = 0;
+  private speech: string[] = [];
+  private speechTime = 0;
   private badgePulse = 0;
   private clock = 0;
   private anchoredInXR = false;
-  private started = false;
   private readonly listeners: ((event: string) => void)[] = [];
   private readonly eventLog: string[] = [];
 
@@ -144,8 +171,7 @@ export class App {
     this.root.add(this.sun, this.sun.target);
 
     this.root.add(this.table.group);
-    this.design = this.load() ?? defaultDesign();
-    this.before = cloneDesign(this.design);
+    this.design = scratchDesign();
     this.now = scoreDesign(this.design);
     this.day = scoreDay(this.design);
     this.view.rebuild(this.design);
@@ -163,43 +189,53 @@ export class App {
       this.ghost.group.add(mark);
     }
 
-    // HUD: score badge, the Elder's subtitles, the current hint, and tokens.
+    // HUD: the score badge above one large text panel, plus pinch tokens.
     this.root.add(this.hud);
-    this.badge = new Label({ width: 0.27, height: 0.078, fontScale: 0.34, bold: true, border: PALETTE.gold });
-    this.badge.mesh.position.y = 0.108;
-    this.subtitle = new Label({ width: 0.5, height: 0.11, fontScale: 0.25 });
-    this.hint = new Label({
-      width: 0.5,
-      height: 0.052,
-      fontScale: 0.4,
-      bg: 'rgba(247, 234, 208, 0.92)',
-      fg: PALETTE.ink,
+    this.badge = new Label({ width: 0.36, height: 0.1, fontScale: 0.36, bold: true, border: PALETTE.gold, maxLines: 2 });
+    this.badge.mesh.position.y = 0.128;
+    this.panel = new Label({
+      width: 0.74,
+      height: 0.13,
+      fontScale: 0.36,
+      bold: true,
+      bg: 'rgba(24, 14, 8, 0.94)',
+      fg: '#ffffff',
+      maxLines: 2,
     });
-    this.hint.mesh.position.y = -0.092;
-    const token = (text: string, bg: string, x: number, y: number, size = 0.074) => {
-      const l = new Label({ width: size, height: size, ppm: 2600, fontScale: 0.3, round: true, bold: true, bg, border: PALETTE.cream });
+    const token = (text: string, bg: string, x: number, y: number, size = 0.085) => {
+      const l = new Label({ width: size, height: size, ppm: 2400, fontScale: 0.3, round: true, bold: true, bg, border: PALETTE.cream });
       l.setText(text);
       l.mesh.position.set(x, y, 0.004);
       l.mesh.visible = false;
       this.hud.add(l.mesh);
       return l;
     };
-    this.accept = token('✓\nAccept', PALETTE.leaf, -0.305, 0);
-    this.reject = token('✕\nNo', PALETTE.clay, 0.305, 0);
-    this.back = token('Table', PALETTE.sky, 0, -0.175);
-    this.skip = new Label({ width: 0.1, height: 0.034, fontScale: 0.46, bg: PALETTE.panel });
+    this.accept = token('✓\nAccept', PALETTE.leaf, -0.43, 0);
+    this.reject = token('✕\nNo', PALETTE.clay, 0.43, 0);
+    this.back = token('Table', PALETTE.sky, 0, -0.125);
+    this.skip = new Label({ width: 0.13, height: 0.044, fontScale: 0.5, bold: true, bg: PALETTE.panel });
     this.skip.setText('Skip intro');
-    this.skip.mesh.position.set(0.315, -0.092, 0.004);
+    this.skip.mesh.position.set(0.3, -0.098, 0.004);
     this.skip.mesh.visible = false;
-    this.hud.add(this.badge.mesh, this.subtitle.mesh, this.hint.mesh, this.skip.mesh);
-    this.subtitle.setText('');
-    this.subtitle.mesh.visible = false;
+    this.hud.add(this.badge.mesh, this.panel.mesh, this.skip.mesh);
+
+    // Start cards: build from scratch, or start from the compound.
+    const card = (text: string, x: number, y: number, choose: () => void, w = 0.33, h = 0.17) => {
+      const label = new Label({ width: w, height: h, fontScale: 0.2, bold: true, bg: 'rgba(24, 14, 8, 0.94)', border: PALETTE.gold, maxLines: 2 });
+      label.setText(text);
+      label.mesh.position.set(x, y, 0.004);
+      this.hud.add(label.mesh);
+      this.cards.push({ label, choose });
+    };
+    card('Build from\nscratch', -0.185, -0.17, () => this.startWith('scratch'));
+    card('Start from a\nYoruba compound', 0.185, -0.17, () => this.startWith('compound'));
+    if (this.load()) card('Continue my last house', 0, -0.305, () => this.startWith('saved'), 0.4, 0.075);
 
     // Table tokens: the Elder figure and the Menu button.
     this.halo = this.buildElder();
     this.elder.position.set(-0.225, 0, 0.235);
     this.table.furniture.add(this.elder);
-    this.menuToken = new Label({ width: 0.064, height: 0.064, ppm: 2600, fontScale: 0.3, round: true, bold: true, border: PALETTE.gold });
+    this.menuToken = new Label({ width: 0.07, height: 0.07, ppm: 2400, fontScale: 0.32, round: true, bold: true, border: PALETTE.gold });
     this.menuToken.setText('Menu');
     this.menuToken.mesh.position.set(0.225, 0.035, 0.24);
     this.menuToken.mesh.rotation.x = -0.9;
@@ -224,17 +260,19 @@ export class App {
     };
     this.gestures.onPinch = (hit) => {
       if (!hit && this.menu.isOpen) this.menu.close();
-      if (!this.started) this.begin();
     };
 
     // Desktop preview shortcuts (never needed in the headset).
     const keys: Record<string, () => void> = {
+      '1': () => this.startWith('scratch'),
+      '2': () => this.startWith('compound'),
       h: () => this.setHeat(!this.heatOn),
       e: () => this.askElder(),
       c: () => this.toggleCompare(),
       u: () => this.undo(),
+      f: () => this.toggleRoof(),
       m: () => this.cycleMaterial(),
-      r: () => this.reset(),
+      r: () => this.newHouse(),
       y: () => this.acceptProposal(),
       n: () => this.rejectProposal(),
       b: () => this.shift.exit(),
@@ -249,9 +287,7 @@ export class App {
     this.table.anchor(_pos, _quat);
     this.placeHud();
     this.refresh();
-    this.setHint('Pinch anywhere to begin.');
-    // Without a tap, browsers block audio; start the intro anyway after a beat.
-    window.setTimeout(() => this.begin(), 2500);
+    this.showStart(true);
   }
 
   // ------------------------------------------------------------------ setup
@@ -282,7 +318,7 @@ export class App {
   }
 
   private registerTokens(): void {
-    const swell = (label: Label) => (on: boolean) => label.mesh.scale.setScalar(on ? 1.18 : 1);
+    const swell = (label: Label) => (on: boolean) => label.mesh.scale.setScalar(on ? 1.15 : 1);
     const body = new Group();
     body.position.y = 0.045;
     this.elder.add(body);
@@ -297,7 +333,7 @@ export class App {
     this.gestures.add({
       id: 'menu-token',
       object: this.menuToken.mesh,
-      radius: 0.036,
+      radius: 0.04,
       enabled: () => this.mode === 'table',
       onHover: swell(this.menuToken),
       onClick: () => {
@@ -306,44 +342,78 @@ export class App {
         this.openMenu(_v.clone());
       },
     });
-    this.gestures.add({
-      id: 'accept',
-      object: this.accept.mesh,
-      radius: 0.04,
-      enabled: () => this.accept.mesh.visible && this.hud.visible,
-      onHover: swell(this.accept),
-      onClick: () => this.acceptProposal(),
-    });
-    this.gestures.add({
-      id: 'reject',
-      object: this.reject.mesh,
-      radius: 0.04,
-      enabled: () => this.reject.mesh.visible && this.hud.visible,
-      onHover: swell(this.reject),
-      onClick: () => this.rejectProposal(),
-    });
-    this.gestures.add({
-      id: 'back',
-      object: this.back.mesh,
-      radius: 0.04,
-      enabled: () => this.back.mesh.visible && this.mode === 'inside',
-      onHover: swell(this.back),
-      onClick: () => this.shift.exit(),
-    });
-    this.gestures.add({
-      id: 'skip',
-      object: this.skip.mesh,
-      radius: 0.045,
-      enabled: () => this.skip.mesh.visible && this.hud.visible,
-      onHover: swell(this.skip),
-      onClick: () => this.onboarding.skip(),
+    const hudToken = (id: string, label: Label, radius: number, run: () => void, extra = () => true) =>
+      this.gestures.add({
+        id,
+        object: label.mesh,
+        radius,
+        enabled: () => label.mesh.visible && this.hud.visible && extra(),
+        onHover: swell(label),
+        onClick: run,
+      });
+    hudToken('accept', this.accept, 0.046, () => this.acceptProposal());
+    hudToken('reject', this.reject, 0.046, () => this.rejectProposal());
+    hudToken('back', this.back, 0.046, () => this.shift.exit(), () => this.mode === 'inside');
+    hudToken('skip', this.skip, 0.06, () => this.onboarding.skip());
+    this.cards.forEach((card, i) => {
+      this.gestures.add({
+        id: `card-${i}`,
+        object: card.label.mesh,
+        radius: 1,
+        surface: true,
+        enabled: () => this.mode === 'start' && this.hud.visible,
+        onHover: swell(card.label),
+        onClick: card.choose,
+      });
     });
   }
 
-  private begin(): void {
-    if (this.started) return;
-    this.started = true;
-    this.onboarding.start();
+  // ------------------------------------------------------------ start screen
+
+  private showStart(on: boolean): void {
+    for (const card of this.cards) card.label.mesh.visible = on;
+    this.badge.mesh.visible = !on;
+    // The sun arc would sit behind the cards; it appears with the plot.
+    this.table.gizmos.visible = !on;
+    if (on) {
+      this.mode = 'start';
+      this.handles.setVisible(false);
+      this.setHint('Welcome to Ilé. Pinch a card to begin.');
+    }
+  }
+
+  /** Leave the start screen with an empty plot, the compound, or a saved house. */
+  startWith(kind: 'scratch' | 'compound' | 'saved'): void {
+    if (this.mode !== 'start') return;
+    const hour = this.design.hour;
+    const saved = kind === 'saved' ? this.load() : null;
+    this.fromScratch = kind === 'scratch';
+    this.design = withHour(saved ?? (kind === 'scratch' ? scratchDesign() : defaultDesign()), hour);
+    this.before = isComplete(this.design) ? cloneDesign(this.design) : null;
+    this.shownHeight = this.design.wallHeight;
+    this.history.clear();
+    this.mode = 'table';
+    this.showStart(false);
+    this.handles.setVisible(true);
+    this.refresh();
+    Sfx.chime();
+    if (kind === 'compound') this.onboarding.start();
+    else this.setHint(scratchHint(this.design));
+    this.emit(`start:${kind}`);
+  }
+
+  /** Back to the start screen for a new house. */
+  newHouse(): void {
+    if (this.mode !== 'table') return;
+    if (this.compareOn) this.toggleCompare();
+    this.clearProposal();
+    this.onboarding.skip(true);
+    this.setHeat(false);
+    this.design = withHour(scratchDesign(), this.design.hour);
+    this.shownHeight = 0;
+    this.refresh();
+    this.speech = [];
+    this.showStart(true);
   }
 
   // ----------------------------------------------------------------- events
@@ -370,7 +440,7 @@ export class App {
   }
 
   recenter(): void {
-    if (this.mode !== 'table') return;
+    if (this.mode !== 'table' && this.mode !== 'start') return;
     this.headPose(_pos, _quat);
     this.table.anchor(_pos, _quat);
     this.placeHud();
@@ -382,11 +452,11 @@ export class App {
       _dir.set(0, 0, -1).applyQuaternion(_quat);
       _dir.y = 0;
       _dir.normalize();
-      this.hud.position.copy(_pos).addScaledVector(_dir, 0.85);
-      this.hud.position.y = _pos.y - 0.1;
+      this.hud.position.copy(_pos).addScaledVector(_dir, 0.95);
+      this.hud.position.y = _pos.y - 0.2;
     } else {
       this.table.group.updateMatrixWorld(true);
-      this.hud.position.copy(this.table.group.localToWorld(_v.set(0, 0.3, -0.33)));
+      this.hud.position.copy(this.table.group.localToWorld(_v.set(0, 0.29, -0.36)));
     }
     this.hud.lookAt(_pos);
   }
@@ -411,19 +481,29 @@ export class App {
     this.editStart = null;
     if (!start || !designChanged(start, this.design)) return;
     this.history.commit(start);
-    this.save();
-    this.emit(`edit:${kind}`);
+    this.afterEdit(kind);
   }
 
-  /** One-shot edit with an undo entry (toggles, menu actions). */
+  /** One-shot edit with an undo entry (toggles, menu actions, new rooms). */
   commit(next: Design, kind: string): void {
     if (!designChanged(next, this.design)) return;
     this.history.commit(this.design);
     this.design = next;
     this.clearProposal();
     this.refresh();
-    this.save();
     Sfx.tick();
+    this.afterEdit(kind);
+  }
+
+  private afterEdit(kind: string): void {
+    this.save();
+    // A scratch-built house gets its "before" the first time it is whole.
+    if (!this.before && isComplete(this.design)) {
+      this.before = cloneDesign(this.design);
+      this.toast('Your house stands. Now make it cool.', 3);
+      Sfx.chime();
+    }
+    if (this.fromScratch && !this.onboarding.active) this.setHint(scratchHint(this.design));
     this.emit(`edit:${kind}`);
   }
 
@@ -445,13 +525,18 @@ export class App {
     this.clearProposal();
     this.refresh();
     this.save();
+    if (this.fromScratch && !this.onboarding.active) this.setHint(scratchHint(this.design));
     Sfx.dismiss();
     this.toast('Undone');
   }
 
-  reset(): void {
-    this.commit(withHour(defaultDesign(), this.design.hour), 'reset');
-    this.toast('Back to the first compound');
+  toggleRoof(): void {
+    if (this.design.rooms.length === 0 || this.design.wallHeight === 0) {
+      this.toast('Raise the walls first.');
+      return;
+    }
+    this.commit(setRoof(this.design, !this.design.roof), 'roof');
+    this.toast(this.design.roof ? 'Roof on. Twist a gold grip for deeper eaves.' : 'Roof off.');
   }
 
   cycleMaterial(): void {
@@ -463,6 +548,10 @@ export class App {
   }
 
   setHeat(on: boolean): void {
+    if (on && !isComplete(this.design)) {
+      this.toast('The heat map needs walls and a roof.');
+      return;
+    }
     if (this.heatOn === on) return;
     this.heatOn = on;
     this.refresh(false);
@@ -471,23 +560,34 @@ export class App {
 
   toggleCompare(): void {
     if (this.mode !== 'table') return;
+    if (!this.compareOn && !this.before) {
+      this.toast('Finish the walls and roof first.');
+      return;
+    }
     this.compareOn = !this.compareOn;
     this.compare.group.visible = this.compareOn;
     this.hud.visible = !this.compareOn;
+    this.overlay.labels.visible = this.overlay.labels.visible && !this.compareOn;
     this.handles.setVisible(!this.compareOn);
-    if (this.compareOn) this.compare.update(this.before, this.design);
+    this.table.gizmos.visible = !this.compareOn;
+    if (this.compareOn && this.before) this.compare.update(this.before, this.design);
+    else this.refresh(false);
   }
 
   setRoomHover(room: RoomId, on: boolean): void {
     this.overlay.setHover(room, on);
-    this.overlay.update(this.view, this.design, this.now, this.heatOn, this.mode === 'table');
-    if (on && this.mode === 'table') {
-      const s = this.now.rooms[room];
-      this.toast(`${ROOM_LABEL[room]} · ${s.feel.toFixed(0)}°C feel · ${s.breeze} — pinch to step inside`, 1.2);
+    this.overlay.update(this.view, this.design, this.now, this.heatOn, this.mode === 'table' && !this.compareOn);
+    const s = this.now.rooms[room];
+    if (on && s && this.mode === 'table' && isComplete(this.design)) {
+      this.toast(`${roomLabel(this.design, room)}: ${s.feel.toFixed(0)}°C, ${s.breeze}. Pinch to step inside.`, 1.2);
     }
   }
 
   enterRoom(room: RoomId): void {
+    if (this.design.wallHeight === 0) {
+      this.toast('Raise the walls before stepping inside.');
+      return;
+    }
     if (this.compareOn) this.toggleCompare();
     this.menu.close();
     this.shift.enter(room);
@@ -497,34 +597,35 @@ export class App {
   refresh(rebuild = true): void {
     const d = this.design;
     if (rebuild) {
-      this.view.rebuild(d);
+      this.view.rebuild(d, this.shownHeight);
       this.day = scoreDay(d);
       this.shift?.reseat();
     }
     this.now = scoreDesign(d);
+    if (this.heatOn && !isComplete(d)) this.heatOn = false;
     this.handles?.layout(d);
     this.table.setRotation(d.rotation);
     this.table.setHour(d.hour);
-    this.overlay.update(this.view, d, this.now, this.heatOn, this.mode === 'table');
-    if (this.mode === 'table') {
+    this.overlay.update(this.view, d, this.now, this.heatOn, this.mode === 'table' && !this.compareOn);
+    if (this.mode === 'table' || this.mode === 'start') {
       this.view.setRoofOpacity(this.heatOn ? HEAT_ROOF : TABLE_ROOF);
     }
     this.updateSun();
     this.updateBadge();
-    if (this.compareOn) this.compare.update(this.before, d);
+    if (this.compareOn && this.before) this.compare.update(this.before, d);
   }
 
   private updateBadge(): void {
-    if (this.mode === 'inside' && this.room) {
-      const s = this.now.rooms[this.room];
-      this.badge.setText(
-        `${ROOM_LABEL[this.room]} · comfort ${s.comfort}\n${s.feel.toFixed(0)}°C feel · ${s.breeze}`,
-      );
+    const d = this.design;
+    const s = this.room ? this.now.rooms[this.room] : undefined;
+    if (this.mode === 'inside' && this.room && s) {
+      this.badge.setText(`${roomLabel(d, this.room)}\n${s.feel.toFixed(0)}°C · ${s.breeze} · comfort ${s.comfort}`);
       Sfx.wind(s.breeze === 'breezy' ? 1 : s.breeze === 'some air' ? 0.45 : 0.1);
+    } else if (!isComplete(d)) {
+      const n = d.rooms.length;
+      this.badge.setText(`${n} room${n === 1 ? '' : 's'}\n${d.wallHeight ? 'needs a roof' : 'no walls yet'}`);
     } else {
-      this.badge.setText(
-        `Ilé Score  ${this.day.overall}\n${formatHour(this.design.hour)} · right now ${this.now.overall}`,
-      );
+      this.badge.setText(`Ilé Score  ${this.day.overall}\n${formatHour(d.hour)} · now ${this.now.overall}`);
     }
   }
 
@@ -590,31 +691,45 @@ export class App {
   // ------------------------------------------------------------------ elder
 
   askElder(): void {
-    if (this.elderBusy || this.mode === 'shifting') return;
+    if (this.elderBusy || this.mode === 'shifting' || this.mode === 'start') return;
+    if (!isComplete(this.design)) {
+      this.say('Build me a house first. Rooms, walls and a roof. Then I will tell you how the sun treats it.');
+      return;
+    }
     if (this.proposal) {
       this.say(this.proposal.say);
       return;
     }
     this.elderBusy = true;
-    this.subtitle.mesh.visible = true;
-    this.subtitle.setText('The Elder studies your house…');
+    this.speech = ['The Elder studies your house…'];
+    this.speechTime = 30;
+    this.updatePanel();
     const asked = serialize(this.design);
     void askElder(this.design).then((reply) => {
       this.elderBusy = false;
       // The house changed while he was thinking: his advice no longer fits.
       if (serialize(this.design) !== asked) {
-        this.subtitle.setText('You changed the house while I was looking. Ask me again.');
+        this.say('You changed the house while I was looking. Ask me again.');
         return;
       }
-      this.say(reply.say);
       if (reply.actions.length > 0) this.showProposal(reply);
+      this.say(reply.say);
     });
   }
 
+  /** Speak a line: voiced, and shown a sentence or two at a time. */
   say(text: string): void {
-    this.subtitle.mesh.visible = true;
-    this.subtitle.setText(text);
+    this.speech = pages(text);
+    this.speechTime = 0;
+    this.nextSpeechPage(true);
     speak(text);
+  }
+
+  private nextSpeechPage(first = false): void {
+    if (!first) this.speech.shift();
+    const page = this.speech[0];
+    this.speechTime = page ? Math.max(2.4, page.length * 0.062) : 0;
+    this.updatePanel();
   }
 
   private showProposal(reply: ElderReply): void {
@@ -637,22 +752,18 @@ export class App {
     });
     this.accept.mesh.visible = true;
     this.reject.mesh.visible = true;
-    this.subtitle.setText(
-      `${reply.say}\n\u2192 ${reply.actions.map(describeAction).join('  +  ')}`,
-    );
-    if (!this.onboarding.active) {
-      this.setHint('Pinch \u2713 to accept, or swipe your hand to wave it away.');
-    }
+    this.proposalText = reply.actions.map((a) => describeAction(a, this.design)).join(' + ');
     this.emit('proposal');
   }
 
   private clearProposal(): void {
     if (!this.proposal) return;
     this.proposal = null;
+    this.proposalText = '';
     this.ghost.group.visible = false;
     this.accept.mesh.visible = false;
     this.reject.mesh.visible = false;
-    if (!this.onboarding.active) this.setHint(FREE_HINT);
+    this.updatePanel();
   }
 
   acceptProposal(): void {
@@ -662,12 +773,14 @@ export class App {
     this.history.commit(this.design);
     this.design = applyActions(this.design, p.actions);
     this.clearProposal();
+    this.speech = [];
+    stopSpeaking();
     this.refresh();
     this.save();
     Sfx.chime();
     this.badgePulse = 1;
     const gain = this.day.overall - beforeScore;
-    this.toast(`Accepted · Ilé Score ${gain >= 0 ? '+' : ''}${gain}`, 3.5);
+    this.toast(`Accepted. Ilé Score ${gain >= 0 ? '+' : ''}${gain}`, 3.5);
     this.emit('accepted');
   }
 
@@ -676,43 +789,65 @@ export class App {
     this.clearProposal();
     stopSpeaking();
     Sfx.dismiss();
-    this.subtitle.setText('As you wish. It is your house.');
+    this.say('As you wish. It is your house.');
     this.emit('rejected');
   }
 
   // --------------------------------------------------------------------- ui
 
+  /** Elder speech wins, then a toast, then a pending proposal, then the hint. */
+  private updatePanel(): void {
+    const speaking = this.speech.length > 0;
+    const text = speaking
+      ? this.speech[0]
+      : this.toastTime > 0
+        ? this.toastText
+        : this.proposal
+          ? `${this.proposalText}. Pinch ✓ to accept.`
+          : this.hintText;
+    this.panel.setText(
+      text,
+      speaking ? PALETTE.gold : '#ffffff',
+      speaking ? 'rgba(46, 22, 8, 0.96)' : 'rgba(24, 14, 8, 0.94)',
+    );
+  }
+
   setHint(text: string): void {
     this.hintText = text;
-    if (this.toastTime <= 0) this.hint.setText(text);
+    this.updatePanel();
   }
 
   toast(text: string, seconds = 2.4): void {
+    this.toastText = text;
     this.toastTime = seconds;
-    this.hint.setText(text);
+    this.updatePanel();
   }
 
   onboardingChanged(): void {
     this.skip.mesh.visible = this.onboarding.active;
+    if (!this.onboarding.active && this.fromScratch) this.setHint(scratchHint(this.design));
   }
 
   private openMenu(at: Vector3, _hand?: Hand): void {
-    if (this.mode === 'shifting') return;
+    if (this.mode === 'shifting' || this.mode === 'start') return;
+    const heat = { label: this.heatOn ? 'Heat\noff' : 'Heat\non', run: () => this.setHeat(!this.heatOn) };
+    const elder = { label: 'Ask\nElder', run: () => this.askElder() };
     const items: MenuItem[] =
       this.mode === 'inside'
         ? [
             { label: 'Back to\ntable', run: () => this.shift.exit() },
-            { label: this.heatOn ? 'Heat\noff' : 'Heat\non', run: () => this.setHeat(!this.heatOn) },
-            { label: 'Ask\nElder', run: () => this.askElder() },
+            heat,
+            elder,
             { label: 'Undo', run: () => this.undo() },
           ]
         : [
-            { label: this.heatOn ? 'Heat\noff' : 'Heat\non', run: () => this.setHeat(!this.heatOn) },
-            { label: 'Ask\nElder', run: () => this.askElder() },
+            heat,
+            elder,
             { label: this.compareOn ? 'Close\ncompare' : 'Compare', run: () => this.toggleCompare() },
             { label: 'Undo', run: () => this.undo() },
+            { label: this.design.roof ? 'Roof\noff' : 'Roof', run: () => this.toggleRoof() },
             { label: `Walls:\n${this.design.material}`, run: () => this.cycleMaterial() },
-            { label: 'Reset', run: () => this.reset() },
+            { label: 'New\nhouse', run: () => this.newHouse() },
             { label: 'Re-\ncentre', run: () => this.recenter() },
           ];
     // Keep the menu inside the VR Glasses' narrow view: pull it toward the
@@ -745,7 +880,8 @@ export class App {
   private load(): Design | null {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? deserialize(raw) : null;
+      const d = raw ? deserialize(raw) : null;
+      return d && d.rooms.length > 0 ? d : null;
     } catch {
       return null;
     }
@@ -759,7 +895,7 @@ export class App {
 
     // Seat the table in front of the user once their head pose is known.
     const inXR = !!this.world.session;
-    if (inXR !== this.anchoredInXR && this.mode === 'table') {
+    if (inXR !== this.anchoredInXR && (this.mode === 'table' || this.mode === 'start')) {
       this.headPose(_pos, _quat);
       if (!inXR || _pos.lengthSq() > 0.01) {
         this.anchoredInXR = inXR;
@@ -774,13 +910,28 @@ export class App {
     this.menu.update(dt);
     this.onboarding.update(dt);
 
+    // Walls grow from the floor when raised.
+    const target = this.design.wallHeight;
+    if (Math.abs(this.shownHeight - target) > 1e-3) {
+      const step = WALL_GROW * dt;
+      this.shownHeight =
+        Math.abs(target - this.shownHeight) <= step
+          ? target
+          : this.shownHeight + Math.sign(target - this.shownHeight) * step;
+      this.view.rebuild(this.design, this.shownHeight);
+    }
+
     this.headPose(_pos, _quat);
     this.table.faceLabels(_pos);
     this.overlay.faceLabels(_pos);
 
+    if (this.speech.length > 0 && !this.elderBusy) {
+      this.speechTime -= dt;
+      if (this.speechTime <= 0) this.nextSpeechPage();
+    }
     if (this.toastTime > 0) {
       this.toastTime -= dt;
-      if (this.toastTime <= 0) this.hint.setText(this.hintText);
+      if (this.toastTime <= 0) this.updatePanel();
     }
     // Small living details: the Elder's halo, the ghost's breath, the badge.
     const pulse = 0.5 + 0.5 * Math.sin(this.clock * (this.elderBusy ? 9 : 2.2));

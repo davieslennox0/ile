@@ -8,14 +8,14 @@
 
 import {
   OPPOSITE,
+  SIDES,
   SIDE_NORMAL,
+  bounds,
+  isOpen,
   rectArea,
   rectD,
   rectW,
   rooms,
-  sideLength,
-  slotKey,
-  slotSides,
   type Design,
   type Material,
   type Room,
@@ -126,11 +126,15 @@ export function litFraction(
 }
 
 export function courtRatio(d: Design): number {
-  return rectArea(d.court) / rectArea(d.outer);
+  return d.court ? rectArea(d.court) / rectArea(bounds(d)) : 0;
 }
 
+/** Roof gain when there is no roof at all: the sun comes straight in. */
+const NO_ROOF_FACTOR = 2;
+
 function ventilation(d: Design, room: Room): { cool: number; breeze: Breeze } {
-  const open = slotSides(room).filter((s) => d.openings[slotKey(room.id, s)]);
+  // Only openings to the outside or the courtyard move air through a room.
+  const open = SIDES.filter((s) => room.sides[s].type !== 'room' && isOpen(d, room, s));
   if (open.length === 0) return { cool: -0.8, breeze: 'still' };
   const opposite = open.some((s) => open.includes(OPPOSITE[s]));
   if (opposite) return { cool: 3.2, breeze: 'breezy' };
@@ -141,6 +145,7 @@ function ventilation(d: Design, room: Room): { cool: number; breeze: Breeze } {
 export function scoreRoom(d: Design, room: Room, hour: number): RoomScore {
   const sun = sunVector(hour);
   const sunUp = Math.max(0, sun.y);
+  const height = Math.max(2.4, d.wallHeight);
 
   let wallGain = 0;
   let hotSide: Side | null = null;
@@ -150,9 +155,9 @@ export function scoreRoom(d: Design, room: Room, hour: number): RoomScore {
       const n = rotateXZ(SIDE_NORMAL[side], d.rotation);
       const cosInc = n.x * sun.x + n.z * sun.z;
       if (cosInc <= 0) continue;
-      const lit = litFraction(d.overhang[side], d.wallHeight, cosInc, sunUp);
-      const opening = d.openings[slotKey(room.id, side)] ? 1.8 : 1;
-      const gain = cosInc * lit * sideLength(room, side) * opening;
+      const lit = litFraction(d.roof ? d.overhang[side] : 0, height, cosInc, sunUp);
+      const opening = isOpen(d, room, side) ? 1.8 : 1;
+      const gain = cosInc * lit * room.sides[side].exteriorLength * opening;
       wallGain += gain;
       if (gain > hotGain) {
         hotGain = gain;
@@ -163,16 +168,15 @@ export function scoreRoom(d: Design, room: Room, hour: number): RoomScore {
   const perimeter = 2 * (rectW(room) + rectD(room));
   const exposure = clamp((wallGain / perimeter) * 2, 0, 1);
 
-  const roofGain =
-    sunUp * ROOF_FACTOR[d.material] * clamp(3 / d.wallHeight, 0.6, 1.25);
+  const roofFactor = d.roof ? ROOF_FACTOR[d.material] : NO_ROOF_FACTOR;
+  const roofGain = sunUp * roofFactor * clamp(3 / height, 0.6, 1.25);
   const solar = 6 * exposure * WALL_FACTOR[d.material] + 3 * roofGain;
 
   const vent = ventilation(d, room);
   const court = clamp(courtRatio(d) / 0.22, 0, 1);
-  const opensToCourt =
-    room.courtSide !== null && d.openings[slotKey(room.id, room.courtSide)];
+  const opensToCourt = room.courtSides.some((s) => isOpen(d, room, s));
   const courtCool = court * (opensToCourt ? 2 : 0.7);
-  const heightCool = (d.wallHeight - 2.4) * 0.5;
+  const heightCool = (height - 2.4) * 0.5;
 
   const feel =
     ambientTemp(hour) + solar - vent.cool - courtCool - heightCool;
@@ -188,10 +192,10 @@ export function scoreRoom(d: Design, room: Room, hour: number): RoomScore {
 }
 
 export function scoreDesign(d: Design, hour: number = d.hour): DesignScore {
-  const out = {} as Record<RoomId, RoomScore>;
+  const out: Record<RoomId, RoomScore> = {};
   let weighted = 0;
   let area = 0;
-  let hottest: RoomId = 'parlour';
+  let hottest: RoomId = '';
   let worst = Infinity;
   for (const room of rooms(d)) {
     const s = scoreRoom(d, room, hour);
@@ -204,7 +208,7 @@ export function scoreDesign(d: Design, hour: number = d.hour): DesignScore {
       hottest = room.id;
     }
   }
-  return { hour, overall: Math.round(weighted / area), rooms: out, hottest };
+  return { hour, overall: area > 0 ? Math.round(weighted / area) : 0, rooms: out, hottest };
 }
 
 export interface DayScore {
@@ -215,21 +219,17 @@ export interface DayScore {
 
 /** Whole-day score, 8 AM to 6 PM. This is the number the badge shows. */
 export function scoreDay(d: Design): DayScore {
-  const acc = {} as Record<RoomId, number>;
+  const acc: Record<RoomId, number> = {};
   let overall = 0;
   let n = 0;
   for (let h = 8; h <= 18; h += 1) {
     const s = scoreDesign(d, h);
     overall += s.overall;
-    for (const id of Object.keys(s.rooms) as RoomId[]) {
-      acc[id] = (acc[id] ?? 0) + s.rooms[id].comfort;
-    }
+    for (const id of Object.keys(s.rooms)) acc[id] = (acc[id] ?? 0) + s.rooms[id].comfort;
     n += 1;
   }
-  const out = {} as Record<RoomId, number>;
-  for (const id of Object.keys(acc) as RoomId[]) {
-    out[id] = Math.round(acc[id] / n);
-  }
+  const out: Record<RoomId, number> = {};
+  for (const id of Object.keys(acc)) out[id] = Math.round(acc[id] / n);
   return { overall: Math.round(overall / n), rooms: out };
 }
 

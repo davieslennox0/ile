@@ -18,8 +18,7 @@ import {
 import type { App } from '../app.ts';
 import { Sfx } from '../audio.ts';
 import { rotateXZ } from '../heat/score.ts';
-import { doorways } from '../model/building.ts';
-import { ROOM_LABEL, rectCx, rectCz, roomById, type RoomId } from '../model/state.ts';
+import { rectCx, rectCz, roomById, roomLabel, type RoomId } from '../model/state.ts';
 import { MINI_SCALE, SITE_LIFT } from '../scene/table.ts';
 
 const DURATION = 1.2;
@@ -39,7 +38,7 @@ export class ScaleShift {
   private readonly app: App;
   private phase: Phase = 'idle';
   private t = 0;
-  private room: RoomId = 'parlour';
+  private room: RoomId = '';
   private hopDone = false;
   /** Room centre in site-local metres (after the building's rotation). */
   private readonly centre = new Vector3();
@@ -144,11 +143,7 @@ export class ScaleShift {
   }
 
   private showDoors(): void {
-    const d = this.app.design;
-    const doors = doorways(d)
-      .filter((w) => w.a === this.room || w.b === this.room)
-      .map((w) => ({ x: w.x, z: w.z, to: w.a === this.room ? w.b : w.a }));
-    this.app.handles.showDoors(doors);
+    this.app.handles.showDoors(this.room);
   }
 
   update(delta: number): void {
@@ -170,7 +165,7 @@ export class ScaleShift {
         this.place(1, this.seatTarget(_target), this.roomCentre(this.room));
         this.app.setMode('inside', this.room);
         this.showDoors();
-        this.app.toast(ROOM_LABEL[this.room]);
+        this.app.toast(roomLabel(this.app.design, this.room));
       }
       if (this.t >= 1) this.phase = 'idle';
       return;
@@ -194,7 +189,7 @@ export class ScaleShift {
         this.app.setMode('inside', this.room);
         this.showDoors();
       } else {
-        this.app.handles.showDoors([]);
+        this.app.handles.showDoors(null);
         const site = this.app.table.site;
         site.scale.setScalar(MINI_SCALE);
         site.position.set(0, SITE_LIFT, 0);
