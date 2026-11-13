@@ -105,6 +105,10 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: 'expected a design state' }, 400);
   }
 
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return json({ error: 'elder is not configured (ANTHROPIC_API_KEY)' }, 503);
+  }
+
   try {
     const client = new Anthropic({ timeout: 8_000, maxRetries: 0 });
     const response = await client.messages.create({
