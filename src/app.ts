@@ -160,7 +160,8 @@ export class App {
     this.gestures = new Gestures(world);
     world.createTransformEntity(this.root, { persistent: true });
     // Software renderers (headless CI, remote desktops) cannot afford shadows.
-    const lowGfx = isSoftwareRenderer(world);
+    // `?gfx=high` forces full quality (used for offline frame capture).
+    const lowGfx = !/[?&]gfx=high/.test(location.search) && isSoftwareRenderer(world);
     world.renderer.shadowMap.enabled = !lowGfx;
 
     // Light: a warm sky fill plus the sun, which follows the hour.
