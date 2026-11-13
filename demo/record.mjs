@@ -192,6 +192,18 @@ await slot('accept', 0.8, async () => {
   await sleep(500);
   console.log('  after accept', await state());
   await glide({ x: 700, y: 300 }, 700);
+  // Keep taking the Elder's advice until the house beats where it started.
+  for (let round = 0; round < 3 && (await state()).score < 63; round += 1) {
+    await sleep(700);
+    await click(await at('app.elder', 0, 0.05, 0), 800);
+    for (let i = 0; i < 240 && !(await state()).proposal; i += 1) { await frame(); await realSleep(40); }
+    if (!(await state()).proposal) break;
+    await sleep(1500);
+    await click(await at('app.accept.mesh'), 700);
+    await sleep(600);
+    console.log('  after extra accept', await state());
+    await glide({ x: 700, y: 300 }, 600);
+  }
 });
 await slot('inside', 4.2, async () => {
   await sleep(1300);
@@ -214,6 +226,8 @@ await slot('inside', 4.2, async () => {
 await slot('compare', 2.8, async () => {
   await page.keyboard.press('b'); await sleep(1900);
   console.log('  back?', await state());
+  await page.keyboard.press('h'); // heat numbers off so the comparison reads cleanly
+  await sleep(200);
   await page.keyboard.press('c');
   await glide({ x: 640, y: 560 }, 800);
 });
