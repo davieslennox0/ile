@@ -183,11 +183,11 @@ export class App {
 
     // Table tokens: the Elder figure and the Menu button.
     this.halo = this.buildElder();
-    this.elder.position.set(-0.275, 0, 0.255);
+    this.elder.position.set(-0.225, 0, 0.235);
     this.table.furniture.add(this.elder);
     this.menuToken = new Label({ width: 0.064, height: 0.064, ppm: 2600, fontScale: 0.3, round: true, bold: true, border: PALETTE.gold });
     this.menuToken.setText('Menu');
-    this.menuToken.mesh.position.set(0.275, 0.035, 0.265);
+    this.menuToken.mesh.position.set(0.225, 0.035, 0.24);
     this.menuToken.mesh.rotation.x = -0.9;
     this.table.furniture.add(this.menuToken.mesh);
 
@@ -321,6 +321,7 @@ export class App {
   }
 
   private emit(event: string): void {
+    console.info(`[ile] ${event} · score ${this.day.overall} · ${this.mode}`);
     for (const l of this.listeners) l(event);
   }
 

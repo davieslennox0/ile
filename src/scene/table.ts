@@ -38,7 +38,7 @@ export const KNOB_RADIUS = 12.2;
 export const SITE_LIFT = 0.26 * MINI_SCALE;
 /** Table placement relative to the seated user's eyes. */
 export const TABLE_FORWARD = 0.6;
-export const TABLE_DROP = 0.3;
+export const TABLE_DROP = 0.26;
 
 const _fwd = new Vector3();
 

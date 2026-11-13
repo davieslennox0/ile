@@ -307,7 +307,10 @@ export class Gestures {
     } else {
       p.jointPinch = false;
     }
-    p.down = xr.getSelectState(hand).active || p.jointPinch;
+    // `start` covers a tap that begins and ends between two frames: it reads
+    // as down for this frame and up on the next, so quick pinches still click.
+    const select = xr.getSelectState(hand);
+    p.down = select.active || select.start || p.jointPinch;
     this.trackWholeHand(p, hand, delta);
   }
 
