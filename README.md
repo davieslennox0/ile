@@ -46,7 +46,7 @@ The **Ilé Score** on the badge is the area-weighted comfort averaged over the w
 
 ## The Elder (agentic interaction)
 
-Pinching the Elder sends the design state to `POST /api/elder`, a small server function that calls the Claude API (the key never reaches the client). Claude returns one short explanation and one or two structured actions, constrained by a JSON schema:
+Pinching the Elder sends the design state to `POST /api/elder`, a small server function that calls OpenAI's open-weight `gpt-oss-120b` model hosted on Cerebras (the key never reaches the client). The model returns one short explanation and one or two structured actions, constrained by a JSON schema:
 
 ```json
 {"say":"Your west bedroom takes the full afternoon sun. Our builders deepened the eaves on that side.",
@@ -75,10 +75,10 @@ The emulator device is set in `iwsdk.config.json` (`dev.emulator.device`: `metaV
 ```bash
 npx vercel login
 npx vercel deploy --prod
-npx vercel env add ANTHROPIC_API_KEY production   # then redeploy
+npx vercel env add CEREBRAS_API_KEY production   # then redeploy
 ```
 
-Vercel builds the Vite app to `dist/` and serves `api/elder.ts` as a function. Optional: `ELDER_MODEL` to choose the Claude model. Without a key the app still works, using the built-in Elder.
+Vercel builds the Vite app to `dist/` and serves `api/elder.ts` as a function. Optional: `ELDER_MODEL` to choose another Cerebras-hosted model. Without a key the app still works, using the built-in Elder.
 
 ## Layout
 
@@ -96,7 +96,7 @@ src/
   scaleshift/shift.ts   scale transition, vignette, room hop
   elder/                actions + validation, built-in Elder, API client
   ui/                   labels, palm menu, onboarding, compare
-api/elder.ts            Claude call → {say, actions[]}
+api/elder.ts            model call → {say, actions[]}
 test/                   unit tests (node --test)
 ```
 

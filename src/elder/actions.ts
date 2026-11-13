@@ -38,8 +38,8 @@ export type ElderAction =
 export interface ElderReply {
   say: string;
   actions: ElderAction[];
-  /** Where the advice came from: the Claude endpoint or the built-in rules. */
-  source: 'claude' | 'local';
+  /** Where the advice came from: the language-model endpoint or the built-in rules. */
+  source: 'model' | 'local';
 }
 
 export const MAX_ACTIONS = 2;

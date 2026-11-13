@@ -1,18 +1,19 @@
 /**
  * POST /api/elder — the Elder architect.
  *
- * Receives the current design state from the headset and asks Claude for one
- * short explanation of the hottest problem plus one or two concrete fixes as
+ * Receives the current design state from the headset and asks a language
+ * model (OpenAI gpt-oss on Cerebras, for near-instant replies) for one short
+ * explanation of the hottest problem plus one or two concrete fixes as
  * structured actions. The API key lives only here, on the server.
  *
  * The client validates every action again and falls back to its built-in
  * rule-based Elder on any error, so this endpoint may fail safely.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
-
-const MODEL = process.env.ELDER_MODEL || 'claude-opus-5-5';
+const ENDPOINT = 'https://api.cerebras.ai/v1/chat/completions';
+const MODEL = process.env.ELDER_MODEL || 'gpt-oss-120b';
 const MAX_BODY = 8_000;
+const TIMEOUT_MS = 8_000;
 
 const SIDES = ['north', 'east', 'south', 'west'];
 const ROOMS = ['parlour', 'gate', 'bed1', 'bed2', 'kitchen', 'store', 'bed3', 'bed4'];
@@ -105,47 +106,49 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: 'expected a design state' }, 400);
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return json({ error: 'elder is not configured (ANTHROPIC_API_KEY)' }, 503);
-  }
+  const key = process.env.CEREBRAS_API_KEY;
+  if (!key) return json({ error: 'elder is not configured (CEREBRAS_API_KEY)' }, 503);
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const client = new Anthropic({ timeout: 8_000, maxRetries: 0 });
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 4000,
-      system: SYSTEM,
-      output_config: {
-        effort: 'low',
-        format: { type: 'json_schema', schema: SCHEMA },
-      },
-      messages: [
-        {
-          role: 'user',
-          content: `Here is my house right now:\n${JSON.stringify(state)}`,
+    const upstream = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: MODEL,
+        max_completion_tokens: 2000,
+        temperature: 0.4,
+        reasoning_effort: 'medium',
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'elder_reply', strict: true, schema: SCHEMA },
         },
-      ],
+        messages: [
+          { role: 'system', content: SYSTEM },
+          { role: 'user', content: `Here is my house right now:\n${JSON.stringify(state)}` },
+        ],
+      }),
     });
-    if (response.stop_reason !== 'end_turn') {
-      return json({ error: `elder stopped: ${response.stop_reason}` }, 502);
+    if (upstream.status === 429) return json({ error: 'elder is busy' }, 429);
+    if (!upstream.ok) return json({ error: `elder upstream error ${upstream.status}` }, 502);
+    const data = (await upstream.json()) as {
+      choices?: { finish_reason?: string; message?: { content?: string | null } }[];
+    };
+    const choice = data.choices?.[0];
+    if (!choice?.message?.content || choice.finish_reason !== 'stop') {
+      return json({ error: `elder stopped: ${choice?.finish_reason ?? 'no reply'}` }, 502);
     }
-    const block = response.content.find((b) => b.type === 'text');
-    if (!block || block.type !== 'text') return json({ error: 'empty reply' }, 502);
-    const reply = JSON.parse(block.text) as { say?: unknown; actions?: unknown };
+    const reply = JSON.parse(choice.message.content) as { say?: unknown; actions?: unknown };
     if (typeof reply.say !== 'string' || !Array.isArray(reply.actions)) {
       return json({ error: 'malformed reply' }, 502);
     }
     return json({ say: reply.say, actions: reply.actions.slice(0, 2) });
   } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) {
-      return json({ error: 'elder is not configured (ANTHROPIC_API_KEY)' }, 503);
-    }
-    if (error instanceof Anthropic.RateLimitError) {
-      return json({ error: 'elder is busy' }, 429);
-    }
-    if (error instanceof Anthropic.APIError) {
-      return json({ error: `elder upstream error ${error.status ?? ''}`.trim() }, 502);
-    }
-    return json({ error: 'elder failed' }, 500);
+    const timedOut = error instanceof Error && error.name === 'AbortError';
+    return json({ error: timedOut ? 'elder timed out' : 'elder failed' }, timedOut ? 504 : 500);
+  } finally {
+    clearTimeout(timer);
   }
 }

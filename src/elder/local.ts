@@ -1,5 +1,5 @@
 /**
- * The built-in Elder. When the Claude endpoint is unreachable or returns
+ * The built-in Elder. When the model endpoint is unreachable or returns
  * something unusable, this rule-based advisor answers instead, so the agentic
  * loop (propose → ghost preview → accept/reject) never dead-ends.
  *

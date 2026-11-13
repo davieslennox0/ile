@@ -1,6 +1,6 @@
 /**
- * Talks to the Elder. Sends the current design to POST /api/elder (Claude,
- * key held server-side), validates whatever comes back against the action
+ * Talks to the Elder. Sends the current design to POST /api/elder (a language
+ * model, key held server-side), validates whatever comes back against the action
  * vocabulary, and falls back to the built-in rule-based Elder on any failure
  * — so a proposal always arrives.
  */
@@ -28,7 +28,7 @@ export async function askElder(d: Design): Promise<ElderReply> {
     if (!res.ok) throw new Error(`elder endpoint ${res.status}`);
     const reply = validateReply(await res.json(), d);
     if (!reply) throw new Error('elder reply failed validation');
-    return { ...reply, source: 'claude' };
+    return { ...reply, source: 'model' };
   } catch (err) {
     console.info('[ile] using the built-in elder:', (err as Error).message);
     return localElder(d);

@@ -17,7 +17,6 @@ Ilé ships **no third-party art or audio assets**.
 |---|---|---|
 | [@iwsdk/core](https://www.npmjs.com/package/@iwsdk/core) and IWSDK tooling | WebXR world, input, emulator | MIT |
 | [three.js](https://threejs.org) (via `super-three`) | Rendering | MIT |
-| [@anthropic-ai/sdk](https://www.npmjs.com/package/@anthropic-ai/sdk) | Elder endpoint | MIT |
 | [Vite](https://vite.dev) | Build | MIT |
 
 ## Knowledge
