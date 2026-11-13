@@ -129,6 +129,17 @@ export function courtRatio(d: Design): number {
   return d.court ? rectArea(d.court) / rectArea(bounds(d)) : 0;
 }
 
+/** Things outside the building itself that change how a room feels. */
+export interface ComfortContext {
+  /** Rooms with a standing fan in them. */
+  fans?: RoomId[];
+  /** Mains power; fans do nothing during a cut. Defaults to on. */
+  power?: boolean;
+}
+
+/** Degrees of relief from a running fan. */
+export const FAN_COOL = 2.4;
+
 /** Roof gain when there is no roof at all: the sun comes straight in. */
 const NO_ROOF_FACTOR = 2;
 
@@ -142,7 +153,12 @@ function ventilation(d: Design, room: Room): { cool: number; breeze: Breeze } {
   return { cool: 1, breeze: 'some air' };
 }
 
-export function scoreRoom(d: Design, room: Room, hour: number): RoomScore {
+export function scoreRoom(
+  d: Design,
+  room: Room,
+  hour: number,
+  ctx: ComfortContext = {},
+): RoomScore {
   const sun = sunVector(hour);
   const sunUp = Math.max(0, sun.y);
   const height = Math.max(2.4, d.wallHeight);
@@ -177,9 +193,11 @@ export function scoreRoom(d: Design, room: Room, hour: number): RoomScore {
   const opensToCourt = room.courtSides.some((s) => isOpen(d, room, s));
   const courtCool = court * (opensToCourt ? 2 : 0.7);
   const heightCool = (height - 2.4) * 0.5;
+  const fanOn = ctx.power !== false && !!ctx.fans?.includes(room.id);
+  const fanCool = fanOn ? FAN_COOL : 0;
 
   const feel =
-    ambientTemp(hour) + solar - vent.cool - courtCool - heightCool;
+    ambientTemp(hour) + solar - vent.cool - courtCool - heightCool - fanCool;
   const comfort = Math.round(clamp(100 - (feel - 24) * 7, 0, 100));
   return {
     id: room.id,
@@ -191,14 +209,18 @@ export function scoreRoom(d: Design, room: Room, hour: number): RoomScore {
   };
 }
 
-export function scoreDesign(d: Design, hour: number = d.hour): DesignScore {
+export function scoreDesign(
+  d: Design,
+  hour: number = d.hour,
+  ctx: ComfortContext = {},
+): DesignScore {
   const out: Record<RoomId, RoomScore> = {};
   let weighted = 0;
   let area = 0;
   let hottest: RoomId = '';
   let worst = Infinity;
   for (const room of rooms(d)) {
-    const s = scoreRoom(d, room, hour);
+    const s = scoreRoom(d, room, hour, ctx);
     out[room.id] = s;
     const a = rectArea(room);
     weighted += s.comfort * a;
@@ -218,12 +240,12 @@ export interface DayScore {
 }
 
 /** Whole-day score, 8 AM to 6 PM. This is the number the badge shows. */
-export function scoreDay(d: Design): DayScore {
+export function scoreDay(d: Design, ctx: ComfortContext = {}): DayScore {
   const acc: Record<RoomId, number> = {};
   let overall = 0;
   let n = 0;
   for (let h = 8; h <= 18; h += 1) {
-    const s = scoreDesign(d, h);
+    const s = scoreDesign(d, h, ctx);
     overall += s.overall;
     for (const id of Object.keys(s.rooms)) acc[id] = (acc[id] ?? 0) + s.rooms[id].comfort;
     n += 1;

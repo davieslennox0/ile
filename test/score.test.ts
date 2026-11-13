@@ -12,6 +12,17 @@ import {
   sunVector,
 } from '../src/heat/score.ts';
 import {
+  START_SAVINGS,
+  buildCost,
+  comfortContext,
+  deserializeStory,
+  journal,
+  naira,
+  newStory,
+  serializeStory,
+  visitPrompt,
+} from '../src/story/story.ts';
+import {
   History,
   addRoom,
   fitRoom,
@@ -311,4 +322,62 @@ test('heat colours run from red (hot) to blue (cool)', () => {
   const cool = comfortColor(100);
   assert.ok(hot[0] > hot[2]);
   assert.ok(cool[2] > cool[0]);
+});
+
+// ----------------------------------------------------------------- story
+
+function finishedRing(): Design {
+  return setRoof(setWallHeight(setCourt(scratchRing(), { x0: -2, x1: 2, z0: -2, z1: 2 }), 3), true);
+}
+
+test('story: a modest house fits the starting savings, with money left to improve it', () => {
+  const total = buildCost(scratchDesign(), finishedRing());
+  assert.ok(total > 200_000 && total < START_SAVINGS - 100_000, naira(total));
+  assert.equal(naira(600000), '\u20A6600,000');
+});
+
+test('story: every kind of building work costs something; undoing it is free', () => {
+  const d = finishedRing();
+  const id = d.rooms[0].id;
+  assert.ok(buildCost(d, setOverhang(d, 'west', 1.2)) > 0);
+  assert.ok(buildCost(d, setOpening(d, id, 'north', true)) > 0);
+  assert.ok(buildCost(d, setWallHeight(d, 3.6)) > 0);
+  assert.ok(buildCost(d, addRoom(d, { x0: 5, x1: 8, z0: -2, z1: 2 })!) > 0);
+  assert.equal(buildCost(setOverhang(d, 'west', 1.2), d), 0);
+  assert.equal(buildCost(d, setRotation(d, 90)), 0, 'turning the plan on paper is free');
+});
+
+test('story: a fan cools its room until NEPA takes light', () => {
+  const d = finishedRing();
+  const story = newStory();
+  const room = d.rooms[0].id;
+  story.items.push({ item: 'fan', room, x: 0, y: 0, z: 0, rot: 0 });
+  const bare = scoreDesign(d, 15).rooms[room].comfort;
+  const fanned = scoreDesign(d, 15, comfortContext(story)).rooms[room].comfort;
+  assert.ok(fanned > bare + 10, 'the fan helps');
+  story.power = false;
+  assert.equal(scoreDesign(d, 15, comfortContext(story)).rooms[room].comfort, bare, 'not without power');
+  // Other rooms never had the fan.
+  const other = d.rooms[1].id;
+  assert.equal(scoreDesign(d, 15, comfortContext({ ...story, power: true })).rooms[other].comfort, scoreDesign(d, 15).rooms[other].comfort);
+});
+
+test('story: the journal names the coolest room, and visits bring a prompt', () => {
+  const j = journal(finishedRing(), newStory());
+  assert.equal(j.title, 'Day 1 in Lagos');
+  assert.match(j.lines[0], /^Coolest room: /);
+  assert.match(j.lines[j.lines.length - 1], /Savings \u20A6600,000/);
+  assert.equal(visitPrompt(1), null);
+  assert.match(visitPrompt(2) ?? '', /sister/);
+});
+
+test('story: saves and loads, and survives junk', () => {
+  const s = newStory();
+  s.day = 3;
+  s.savings = 123_500;
+  s.movedIn = true;
+  s.items.push({ item: 'photo', room: 'r1', x: 1, y: 1.5, z: -2, rot: 0 });
+  assert.deepEqual(deserializeStory(serializeStory(s)), s);
+  assert.equal(deserializeStory('{"v":9}'), null);
+  assert.equal(deserializeStory('nope'), null);
 });

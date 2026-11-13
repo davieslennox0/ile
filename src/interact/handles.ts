@@ -416,6 +416,7 @@ export class Handles {
 
   private showRect(r: Rect | null): void {
     this.rect.visible = !!r && rectW(r) > 0 && rectD(r) > 0;
+    this.app.quote(r ? addRoom(this.app.design, r) : null);
     if (!r) return;
     this.rect.scale.set(Math.max(0.1, rectW(r)), 0.12, Math.max(0.1, rectD(r)));
     this.rect.position.set(rectCx(r), 0.08, rectCz(r));

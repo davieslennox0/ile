@@ -453,6 +453,7 @@ export class Gestures {
 
     // 2. Ray onto a handle sphere (with a little angular slop).
     let bestScore = Infinity;
+    let sphereAlong = Infinity;
     for (const t of this.targets) {
       if (t.surface || !t.enabled()) continue;
       t.object.getWorldPosition(_v1);
@@ -465,16 +466,19 @@ export class Gestures {
       if (score < bestScore) {
         bestScore = score;
         best = t;
+        sphereAlong = along;
         p.hit.copy(_v1);
       }
     }
-    if (best) return best;
+    const sphere = best;
+    const sphereHit = _v3.copy(p.hit);
 
     // 3. Ray onto a surface (room floors, panels).
     this.raycaster.ray.copy(p.ray);
     this.raycaster.near = 0.01;
     this.raycaster.far = 200;
-    let bestDist = Infinity;
+    // A panel or card clearly in front of a grip wins over the grip behind it.
+    let bestDist = sphere ? sphereAlong - 0.05 : Infinity;
     for (const t of this.targets) {
       if (!t.surface || !t.enabled()) continue;
       const hits = this.raycaster.intersectObject(t.object, false);
@@ -484,6 +488,7 @@ export class Gestures {
         p.hit.copy(hits[0].point);
       }
     }
+    if (best === sphere && sphere) p.hit.copy(sphereHit);
     return best;
   }
 

@@ -52,6 +52,8 @@ import {
   type RoomId,
 } from './model/state.ts';
 import { ScaleShift } from './scaleshift/shift.ts';
+import { StoryMode } from './story/mode.ts';
+import { naira } from './story/story.ts';
 import { Table } from './scene/table.ts';
 import { Compare } from './ui/compare.ts';
 import { Label, PALETTE } from './ui/label.ts';
@@ -105,6 +107,8 @@ export class App {
   readonly view = new BuildingView({ shadows: true });
   readonly handles: Handles;
   readonly shift: ScaleShift;
+  /** Story mode: savings, belongings, the beats of the day. */
+  readonly story: StoryMode;
 
   design: Design;
   mode: Mode = 'start';
@@ -128,7 +132,7 @@ export class App {
   private shownHeight = 0;
 
   private readonly sun = new DirectionalLight(0xfff0d0, 2.6);
-  private readonly hud = new Group();
+  readonly hud = new Group();
   private readonly badge: Label;
   /** The one text panel: Elder speech, else a toast, else the current hint. */
   private readonly panel: Label;
@@ -221,16 +225,32 @@ export class App {
     this.hud.add(this.badge.mesh, this.panel.mesh, this.skip.mesh);
 
     // Start cards: build from scratch, or start from the compound.
-    const card = (text: string, x: number, y: number, choose: () => void, w = 0.33, h = 0.17) => {
-      const label = new Label({ width: w, height: h, fontScale: 0.2, bold: true, bg: 'rgba(24, 14, 8, 0.94)', border: PALETTE.gold, maxLines: 2 });
+    const card = (text: string, x: number, y: number, choose: () => void, w = 0.33, h = 0.17, fs = 0.2) => {
+      const label = new Label({ width: w, height: h, fontScale: fs, bold: true, bg: 'rgba(24, 14, 8, 0.94)', border: PALETTE.gold, maxLines: 2 });
       label.setText(text);
       label.mesh.position.set(x, y, 0.004);
       this.hud.add(label.mesh);
       this.cards.push({ label, choose });
     };
-    card('Build from\nscratch', -0.185, -0.17, () => this.startWith('scratch'));
-    card('Start from a\nYoruba compound', 0.185, -0.17, () => this.startWith('compound'));
-    if (this.load()) card('Continue my last house', 0, -0.305, () => this.startWith('saved'), 0.4, 0.075);
+    card('Your first home in Lagos', 0, -0.122, () => this.startWith('story'), 0.74, 0.092, 0.4);
+    const row = -0.222;
+    let storySave = false;
+    try {
+      storySave = !!localStorage.getItem('ile.story.v1');
+    } catch {
+      // Storage blocked: no saved home to offer.
+    }
+    const resume = storySave
+      ? { text: 'Continue\nmy home', run: () => this.startWith('story-resume') }
+      : this.load()
+        ? { text: 'Continue my\nlast house', run: () => this.startWith('saved') }
+        : null;
+    // One row of cards under the story card; three across if there is a save.
+    const w = resume ? 0.238 : 0.36;
+    const xs = resume ? [-0.251, 0, 0.251] : [-0.19, 0.19];
+    card('Build from\nscratch', xs[0], row, () => this.startWith('scratch'), w, 0.092, 0.27);
+    card('Start from a\nYoruba compound', xs[1], row, () => this.startWith('compound'), w, 0.092, 0.27);
+    if (resume) card(resume.text, xs[2], row, resume.run, w, 0.092, 0.27);
 
     // Table tokens: the Elder figure and the Menu button.
     this.halo = this.buildElder();
@@ -252,6 +272,7 @@ export class App {
     this.menu = new PalmMenu(this);
     this.root.add(this.menu.group);
     this.onboarding = new Onboarding(this);
+    this.story = new StoryMode(this);
     this.registerTokens();
 
     this.gestures.onPalmUp = (hand, above) => this.openMenu(above, hand);
@@ -265,6 +286,8 @@ export class App {
 
     // Desktop preview shortcuts (never needed in the headset).
     const keys: Record<string, () => void> = {
+      '0': () => this.startWith('story'),
+      k: () => this.story.skip(),
       '1': () => this.startWith('scratch'),
       '2': () => this.startWith('compound'),
       h: () => this.setHeat(!this.heatOn),
@@ -355,7 +378,7 @@ export class App {
     hudToken('accept', this.accept, 0.046, () => this.acceptProposal());
     hudToken('reject', this.reject, 0.046, () => this.rejectProposal());
     hudToken('back', this.back, 0.046, () => this.shift.exit(), () => this.mode === 'inside');
-    hudToken('skip', this.skip, 0.06, () => this.onboarding.skip());
+    hudToken('skip', this.skip, 0.06, () => (this.story.scripted ? this.story.skip() : this.onboarding.skip()));
     this.cards.forEach((card, i) => {
       this.gestures.add({
         id: `card-${i}`,
@@ -384,12 +407,14 @@ export class App {
   }
 
   /** Leave the start screen with an empty plot, the compound, or a saved house. */
-  startWith(kind: 'scratch' | 'compound' | 'saved'): void {
+  startWith(kind: 'scratch' | 'compound' | 'saved' | 'story' | 'story-resume'): void {
     if (this.mode !== 'start') return;
+    const isStory = kind === 'story' || kind === 'story-resume';
+    if (!isStory) this.story.end();
     const hour = this.design.hour;
     const saved = kind === 'saved' ? this.load() : null;
-    this.fromScratch = kind === 'scratch';
-    this.design = withHour(saved ?? (kind === 'scratch' ? scratchDesign() : defaultDesign()), hour);
+    this.fromScratch = kind === 'scratch' || isStory;
+    this.design = withHour(saved ?? (kind === 'compound' ? defaultDesign() : scratchDesign()), hour);
     this.before = isComplete(this.design) ? cloneDesign(this.design) : null;
     this.shownHeight = this.design.wallHeight;
     this.history.clear();
@@ -398,7 +423,17 @@ export class App {
     this.handles.setVisible(true);
     this.refresh();
     Sfx.chime();
-    if (kind === 'compound') this.onboarding.start();
+    if (isStory) {
+      // A returning player gets their own house back; a new one, an empty plot.
+      const home = this.story.begin(kind === 'story-resume');
+      if (home) {
+        this.design = withHour(home, 8);
+        this.before = isComplete(this.design) ? cloneDesign(this.design) : null;
+        this.shownHeight = this.design.wallHeight;
+        this.refresh();
+      }
+      this.setHint(scratchHint(this.design));
+    } else if (kind === 'compound') this.onboarding.start();
     else this.setHint(scratchHint(this.design));
     this.emit(`start:${kind}`);
   }
@@ -409,6 +444,7 @@ export class App {
     if (this.compareOn) this.toggleCompare();
     this.clearProposal();
     this.onboarding.skip(true);
+    this.story.end();
     this.setHeat(false);
     this.design = withHour(scratchDesign(), this.design.hour);
     this.shownHeight = 0;
@@ -475,12 +511,41 @@ export class App {
     this.clearProposal();
     this.refresh();
     Sfx.tick();
+    if (this.editStart) this.quote(next, this.editStart);
+  }
+
+  /** In story mode, show what a change would cost before it is confirmed. */
+  quote(to: Design | null, from: Design = this.design): void {
+    if (!to || !this.story.active) return;
+    const cost = this.story.cost(from, to);
+    if (cost <= 0) return;
+    this.toast(
+      this.story.canAfford(cost) ? `${naira(cost)}. Let go to build.` : `${naira(cost)}. More than your savings.`,
+      1.4,
+    );
+  }
+
+  /** Pay for a change, or say why not. */
+  private pay(from: Design, to: Design): boolean {
+    const cost = this.story.cost(from, to);
+    if (!this.story.canAfford(cost)) {
+      this.toast(`That costs ${naira(cost)}. You have ${this.story.savingsText()}.`, 3);
+      Sfx.dismiss();
+      return false;
+    }
+    this.story.spend(cost);
+    return true;
   }
 
   endEdit(kind: string): void {
     const start = this.editStart;
     this.editStart = null;
     if (!start || !designChanged(start, this.design)) return;
+    if (!this.pay(start, this.design)) {
+      this.design = start;
+      this.refresh();
+      return;
+    }
     this.history.commit(start);
     this.afterEdit(kind);
   }
@@ -488,6 +553,7 @@ export class App {
   /** One-shot edit with an undo entry (toggles, menu actions, new rooms). */
   commit(next: Design, kind: string): void {
     if (!designChanged(next, this.design)) return;
+    if (!this.pay(this.design, next)) return;
     this.history.commit(this.design);
     this.design = next;
     this.clearProposal();
@@ -508,12 +574,32 @@ export class App {
     this.emit(`edit:${kind}`);
   }
 
-  setHour(hour: number): void {
+  setHour(hour: number, quiet = false): void {
     const next = withHour(this.design, hour);
     if (next.hour === this.design.hour) return;
     this.design = next;
     this.refresh(false);
-    Sfx.tick();
+    if (!quiet) Sfx.tick();
+  }
+
+  /** The design as JSON, and back (used by the story save). */
+  exportDesign(): string {
+    return serialize(this.design);
+  }
+
+  importDesign(json: string): Design | null {
+    return deserialize(json);
+  }
+
+  /** Make the heat numbers throb (the power cut). */
+  pulseHeat(scale: number): void {
+    for (const label of this.overlay.labels.children) label.scale.setScalar(scale);
+  }
+
+  /** The story moved to another beat: update what the Skip token does. */
+  storyChanged(): void {
+    this.skip.mesh.visible = this.onboarding.active || this.story.scripted;
+    this.refresh(false);
   }
 
   undo(): void {
@@ -522,6 +608,7 @@ export class App {
       this.toast('Nothing to undo');
       return;
     }
+    this.story.refund(this.story.cost(prev, this.design));
     this.design = withHour(prev, this.design.hour);
     this.clearProposal();
     this.refresh();
@@ -599,10 +686,10 @@ export class App {
     const d = this.design;
     if (rebuild) {
       this.view.rebuild(d, this.shownHeight);
-      this.day = scoreDay(d);
+      this.day = scoreDay(d, this.story?.comfort());
       this.shift?.reseat();
     }
-    this.now = scoreDesign(d);
+    this.now = scoreDesign(d, d.hour, this.story?.comfort());
     if (this.heatOn && !isComplete(d)) this.heatOn = false;
     this.handles?.layout(d);
     this.table.setRotation(d.rotation);
@@ -618,15 +705,19 @@ export class App {
 
   private updateBadge(): void {
     const d = this.design;
+    const money = this.story?.active ? this.story.savingsText() : '';
     const s = this.room ? this.now.rooms[this.room] : undefined;
     if (this.mode === 'inside' && this.room && s) {
       this.badge.setText(`${roomLabel(d, this.room)}\n${s.feel.toFixed(0)}°C · ${s.breeze} · comfort ${s.comfort}`);
       Sfx.wind(s.breeze === 'breezy' ? 1 : s.breeze === 'some air' ? 0.45 : 0.1);
     } else if (!isComplete(d)) {
       const n = d.rooms.length;
-      this.badge.setText(`${n} room${n === 1 ? '' : 's'}\n${d.wallHeight ? 'needs a roof' : 'no walls yet'}`);
+      const what = `${n} room${n === 1 ? '' : 's'} · ${d.wallHeight ? 'needs a roof' : 'no walls yet'}`;
+      this.badge.setText(money ? `${what}\nSavings ${money}` : what.replace(' · ', '\n'));
     } else {
-      this.badge.setText(`Ilé Score  ${this.day.overall}\n${formatHour(d.hour)} · now ${this.now.overall}`);
+      this.badge.setText(
+        `Ilé Score  ${this.day.overall}\n${money ? `Savings ${money}` : `${formatHour(d.hour)} · now ${this.now.overall}`}`,
+      );
     }
   }
 
@@ -754,6 +845,8 @@ export class App {
     this.accept.mesh.visible = true;
     this.reject.mesh.visible = true;
     this.proposalText = reply.actions.map((a) => describeAction(a, this.design)).join(' + ');
+    const cost = this.story.cost(this.design, next);
+    if (cost > 0) this.proposalText += ` (${naira(cost)})`;
     this.emit('proposal');
   }
 
@@ -771,8 +864,10 @@ export class App {
     const p = this.proposal;
     if (!p) return;
     const beforeScore = this.day.overall;
+    const accepted = applyActions(this.design, p.actions);
+    if (!this.pay(this.design, accepted)) return;
     this.history.commit(this.design);
-    this.design = applyActions(this.design, p.actions);
+    this.design = accepted;
     this.clearProposal();
     this.speech = [];
     stopSpeaking();
@@ -825,7 +920,7 @@ export class App {
   }
 
   onboardingChanged(): void {
-    this.skip.mesh.visible = this.onboarding.active;
+    this.skip.mesh.visible = this.onboarding.active || this.story.scripted;
     if (!this.onboarding.active && this.fromScratch) this.setHint(scratchHint(this.design));
   }
 
@@ -917,6 +1012,7 @@ export class App {
     this.shift.update(dt);
     this.menu.update(dt);
     this.onboarding.update(dt);
+    this.story.update(dt);
 
     // Walls grow from the floor when raised.
     const target = this.design.wallHeight;

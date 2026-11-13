@@ -1,0 +1,14 @@
+{
+  "arrival": "Ah, my new neighbour! Ẹ káàbọ̀. I am Baba. This plot is yours now. Start small. Lay one room.",
+  "moveIn": "A roof over your head. Go inside. Put your things where you want them.",
+  "afternoon": "Three o'clock. Now you will learn what your house is made of.",
+  "nepa": "NEPA don take light.",
+  "afterNepa": "The fan sleeps, but a good house does not need it. Ask me, and I will show you.",
+  "evening": "The sun is going. Sit. You did well today.",
+  "visits": [
+    { "day": 2, "text": "Your sister is visiting next week. Will you add a room for her?" },
+    { "day": 3, "text": "Harmattan dust is coming. Deeper eaves keep it off your walls." },
+    { "day": 4, "text": "The block house across the road is baking. Shall we show them what a courtyard does?" },
+    { "day": 5, "text": "You have savings left. A taller wall lets the heat rise above your head." }
+  ]
+}
