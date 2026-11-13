@@ -28,7 +28,7 @@ import type { App } from '../app.ts';
 import { Sfx } from '../audio.ts';
 import type { ComfortContext } from '../heat/score.ts';
 import { WALL_THICKNESS } from '../model/building.ts';
-import { SIDES, edgeCoord, isComplete, roomById, type Design, type Side } from '../model/state.ts';
+import { SIDES, edgeCoord, isComplete, isOpen, roomById, type Design, type Side } from '../model/state.ts';
 import { Label, PALETTE } from '../ui/label.ts';
 import {
   BABA,
@@ -151,7 +151,9 @@ export class StoryMode {
         radius: 0.5,
         enabled: () => this.active && app.mode === 'inside' && built.group.visible,
         onHover: (on) => {
-          built.group.scale.setScalar(on ? 1.12 : 1);
+          // Swell from whatever size it is shown at (small on the tray).
+          const base = (built.group.userData.size as number | undefined) ?? 1;
+          built.group.scale.setScalar(base * (on ? 1.12 : 1));
           if (on) app.toast(ITEM_LABEL[id], 1);
         },
         onDragStart: () => {
@@ -377,6 +379,8 @@ export class StoryMode {
     const it = this.items.get(p.item);
     if (!it) return;
     it.group.visible = true;
+    it.group.userData.size = 1;
+    it.group.scale.setScalar(1);
     it.group.position.set(p.x, p.y, p.z);
     it.group.rotation.y = p.rot;
   }
@@ -406,12 +410,12 @@ export class StoryMode {
       if (!it) return;
       const offset = (i - (loose.length - 1) / 2) * 0.4;
       it.group.visible = true;
-      it.group.scale.setScalar(1);
       it.group.position.copy(this.tray.position).addScaledVector(side, offset);
       it.group.position.y = 0.66 + (id === 'photo' ? 0.25 : 0);
       it.group.rotation.y = this.tray.rotation.y + Math.PI;
       // Tray pieces are shown small; they grow to full size when placed.
-      it.group.scale.setScalar(id === 'mattress' || id === 'rug' ? 0.18 : 0.3);
+      it.group.userData.size = id === 'mattress' || id === 'rug' ? 0.18 : 0.3;
+      it.group.scale.setScalar(it.group.userData.size as number);
     });
   }
 
@@ -446,7 +450,24 @@ export class StoryMode {
       if (best === 'west') { x = room.x0 + off; rot = Math.PI / 2; }
       if (best === 'east') { x = room.x1 - off; rot = -Math.PI / 2; }
       y = Math.min(1.9, Math.max(1.2, p.y));
+      // Hang it on solid wall, clear of any window or doorway on that side.
+      if (isOpen(d, room, best)) {
+        const info = room.sides[best];
+        const alongX = best === 'north' || best === 'south';
+        const at = alongX ? x : z;
+        const clear = Math.min(1.6, info.span * 0.35) + 0.45;
+        if (Math.abs(at - info.center) < clear) {
+          const lo = (alongX ? room.x0 : room.z0) + inset + 0.3;
+          const hi = (alongX ? room.x1 : room.z1) - inset - 0.3;
+          const left = info.center - clear;
+          const right = info.center + clear;
+          const pick = at >= info.center ? (right <= hi ? right : left) : left >= lo ? left : right;
+          if (alongX) x = Math.min(hi, Math.max(lo, pick));
+          else z = Math.min(hi, Math.max(lo, pick));
+        }
+      }
     }
+    it.group.userData.size = 1;
     it.group.scale.setScalar(1);
     it.group.position.set(x, y, z);
     it.group.rotation.y = rot;
