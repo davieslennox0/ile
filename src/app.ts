@@ -891,7 +891,14 @@ export class App {
   // ------------------------------------------------------------------- tick
 
   update(delta: number, _time: number): void {
-    const dt = Math.min(delta, 0.1);
+    // Offline frame capture: advance exactly one fixed tick per video frame,
+    // however many frames the emulator happens to run in between.
+    const step = (globalThis as { __ileStep?: { pending: number; dt: number } }).__ileStep;
+    if (step) {
+      if (step.pending <= 0) return;
+      step.pending -= 1;
+    }
+    const dt = step ? step.dt : Math.min(delta, 0.1);
     this.clock += dt;
 
     // Seat the table in front of the user once their head pose is known.

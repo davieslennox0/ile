@@ -16,7 +16,7 @@ const URL = process.env.ILE_URL || 'https://localhost:8081/?gfx=high';
 const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2); // cubic in/out
 
-export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.3 }) {
+export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64 }) {
   fs.mkdirSync(out, { recursive: true });
   for (const f of fs.readdirSync(out)) if (f.endsWith('.jpg')) fs.unlinkSync(`${out}/${f}`);
   const browser = await chromium.launch({
@@ -41,6 +41,7 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.3 }) {
     // Rig state, all in world metres (the XR origin is the world origin).
     headBase: [...head],
     pitch,
+    fov,
     yaw: 0,
     gaze: [0, 1.0, -0.6],
     hands: {
@@ -59,41 +60,41 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.3 }) {
     const sway = [0.006 * Math.sin(t * 0.9), 0.004 * Math.sin(t * 1.7), 0.004 * Math.sin(t * 0.6 + 1)];
     const jit = (i, a = 0.0012) => a * Math.sin(t * (5.3 + i * 1.9) + i * 2.1);
     await page.evaluate(
-      ({ head, pitch, yaw, gaze, hands }) => {
-        const d = window.IWER_DEVICE;
-        // Hold the device in programmatic-control mode, or IWER's on-page
-        // control panel writes its own values back every frame.
-        if (d.remote) d.remote._isCaptured = true;
-        if (d.primaryInputMode !== 'hand') d.primaryInputMode = 'hand';
-        const setQ = (q, [x, y, z, w]) => { if (typeof q.set === 'function') q.set(x, y, z, w); else Object.assign(q, { x, y, z, w }); };
-        const setV = (v, [x, y, z]) => { if (typeof v.set === 'function') v.set(x, y, z); else Object.assign(v, { x, y, z }); };
+      ({ head, pitch, yaw, gaze, hands, dt, fov }) => {
         const mul = (a, b) => [
           a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
           a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
           a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
           a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
         ];
-        const qy = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)];
-        const qx = [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)];
-        setV(d.position, head);
-        setQ(d.quaternion, mul(qy, qx));
+        const q = ([x, y, z, w]) => ({ x, y, z, w });
+        const v = ([x, y, z]) => ({ x, y, z });
+        const look = (yw, pt) => mul([0, Math.sin(yw / 2), 0, Math.cos(yw / 2)], [Math.sin(pt / 2), 0, 0, Math.cos(pt / 2)]);
         // Gaze: look from the head at the target.
         const dir = [gaze[0] - head[0], gaze[1] - head[1], gaze[2] - head[2]];
-        const gy = Math.atan2(-dir[0], -dir[2]);
-        const gp = Math.atan2(dir[1], Math.hypot(dir[0], dir[2]));
-        if (d.gaze) setQ(d.gaze.quaternion, mul([0, Math.sin(gy / 2), 0, Math.cos(gy / 2)], [Math.sin(gp / 2), 0, 0, Math.cos(gp / 2)]));
+        const state = {
+          inputMode: 'hand',
+          fov,
+          headset: { position: v(head), orientation: q(look(yaw, pitch)) },
+          gaze: { orientation: q(look(Math.atan2(-dir[0], -dir[2]), Math.atan2(dir[1], Math.hypot(dir[0], dir[2])))) },
+          hands: {},
+        };
         for (const side of ['left', 'right']) {
-          const h = d.hands[side];
-          setV(h.position, hands[side].pos);
-          if (hands[side].quat) setQ(h.quaternion, hands[side].quat);
-          h.updatePinchValue(hands[side].pinch);
+          state.hands[side] = { position: v(hands[side].pos), pinchValue: hands[side].pinch };
+          if (hands[side].quat) state.hands[side].orientation = q(hands[side].quat);
         }
+        // IWER's own remote-control command: the same path the IWSDK CLI uses.
+        window.IWER_DEVICE.remote.dispatch('set_device_state', { state }).catch((e) => console.error('rig', e.message));
+        // One fixed app tick per video frame.
+        globalThis.__ileStep = { pending: 1, dt };
       },
       {
         head: rig.headBase.map((v, i) => v + sway[i]),
         pitch: rig.pitch + 0.006 * Math.sin(t * 0.8),
         yaw: rig.yaw + 0.008 * Math.sin(t * 0.5),
         gaze: rig.gaze,
+        dt: 1 / FPS,
+        fov: rig.fov,
         hands: {
           left: { ...rig.hands.left, pos: rig.hands.left.pos.map((v, i) => v + rig.offset.left[i] + jit(i)) },
           right: { ...rig.hands.right, pos: rig.hands.right.pos.map((v, i) => v + rig.offset.right[i] + jit(i + 3)) },
@@ -190,12 +191,7 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.3 }) {
     if (await page.evaluate(() => !!globalThis.ile && !!window.IWER_DEVICE)) break;
     await realSleep(100);
   }
-  await page.evaluate(([x, y, z]) => {
-    const d = window.IWER_DEVICE;
-    d.primaryInputMode = 'hand';
-    d.position.set(x, y, z);
-    globalThis.ile.world.launchXR();
-  }, rig.headBase);
+  await page.evaluate(() => globalThis.ile.world.launchXR());
   for (let i = 0; i < 40; i += 1) {
     await page.clock.runFor(1000 / FPS);
     await realSleep(30);
@@ -204,6 +200,9 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.3 }) {
   rig.xr = await page.evaluate(() => !!globalThis.ile.world.session);
   if (!rig.xr) throw new Error('The immersive session did not start.');
   await rig.hold(0.5);
+  // Seat the table in front of the (now seated-height) head.
+  await page.evaluate(() => globalThis.ile.recenter());
+  await rig.hold(0.3);
 
   // Calibrate: where is each hand's pinch point relative to the position we set?
   for (const side of ['left', 'right']) {
@@ -220,4 +219,27 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.3 }) {
 export async function reach(rig, hand, point, seconds = 0.5, lift = 0) {
   const p = [point[0], point[1] + lift, point[2]];
   await rig.move({ [hand]: p, gaze: point }, seconds);
+}
+
+/**
+ * Find a point on a room's floor that the gaze can reach without a grip or
+ * panel in the way. Run it off camera; returns a world point or null.
+ */
+export async function findRoomAim(rig, room) {
+  const r = await rig.page.evaluate((id) => globalThis.ile.design.rooms.find((x) => x.id === id), room);
+  if (!r) return null;
+  const was = rig.capturing;
+  rig.capturing = false;
+  let found = null;
+  for (const fz of [0, 0.25, -0.25, 0.4, -0.4]) {
+    for (const fx of [0, 0.25, -0.25, 0.4, -0.4]) {
+      const p = await rig.local((r.x0 + r.x1) / 2 + fx * (r.x1 - r.x0), 0.02, (r.z0 + r.z1) / 2 + fz * (r.z1 - r.z0));
+      rig.gaze = p;
+      await rig.hold(0.2); // the gaze takes a few frames to settle
+      if ((await rig.state()).hover.right === `room-${room}`) { found = p; break; }
+    }
+    if (found) break;
+  }
+  rig.capturing = was;
+  return found;
 }

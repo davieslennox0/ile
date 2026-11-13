@@ -1,7 +1,7 @@
 // ~10 s hands-only test render: pick the scratch card, lay a room by
 // pinch-drag, then (on the compound) pinch a room and ScaleShift inside.
 import fs from 'node:fs';
-import { openRig, reach } from './hands.mjs';
+import { findRoomAim, openRig, reach } from './hands.mjs';
 
 const OUT = '/tmp/handtest';
 const rig = await openRig({ out: OUT });
@@ -11,6 +11,8 @@ const log = async (label) => {
   return s;
 };
 
+const ONLY_B = process.env.ILE_PART === 'B';
+if (!ONLY_B) {
 // --- Clip A: build from scratch.
 const card = await rig.where('app.cards[0].label.mesh');
 rig.capturing = true;
@@ -40,11 +42,13 @@ for (const [x0, z0, x1, z1] of [[-5, -6, 5, -2], [-5, 2, 5, 6]]) {
 }
 await rig.move({ right: [0.2, 0.98, -0.32], gaze: [0, 1.0, -0.6] }, 0.5);
 
+}
+
 // --- Clip B: the compound (set up off camera), then step inside.
 rig.capturing = false;
 await rig.page.evaluate(() => {
   const a = globalThis.ile;
-  a.newHouse();
+  if (a.mode !== 'start') a.newHouse();
   a.startWith('compound');
   a.onboarding.skip(true);
 });
@@ -52,14 +56,18 @@ await rig.hold(0.4);
 rig.capturing = true;
 rig.mark('inside');
 await rig.hold(0.4);
-const floor = await rig.where("app.view.floors.get('gate')");
-let aim = floor;
-for (const [dx, dz] of [[0, 0], [0.02, 0.01], [-0.02, 0.01], [0.03, -0.01], [-0.03, -0.01], [0, 0.02]]) {
-  aim = [floor[0] + dx, floor[1], floor[2] + dz];
-  await rig.move({ gaze: aim, right: [aim[0] + 0.03, aim[1] + 0.11, aim[2] + 0.04] }, 0.4);
-  const s = await log('aim room');
-  if (s.hover.right === 'room-gate') break;
+let aim = null;
+let room = 'gate';
+for (const id of ['gate', 'parlour', 'bed1', 'bed2']) {
+  aim = await findRoomAim(rig, id);
+  if (aim) { room = id; break; }
 }
+console.log('  aim', room, JSON.stringify(aim));
+rig.gaze = [0, 1.0, -0.6];
+await rig.hold(0.3);
+await rig.move({ gaze: aim, right: [0.15, aim[1] + 0.25, aim[2] + 0.17] }, 0.7); // hand held clear of the grips; the gaze picks the room
+await rig.hold(0.2);
+await log('aim room');
 await rig.pinch('right', 1, 0.18);
 await rig.hold(0.12);
 await rig.pinch('right', 0, 0.18);
