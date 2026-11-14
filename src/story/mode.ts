@@ -129,6 +129,8 @@ export class StoryMode {
   private skyGoal = SKY.day;
   private hourGoal: number | null = null;
   private hourNow: number | null = null;
+  private adviceStart = 0;
+  private fixes = 0;
   private dragStart = new Vector3();
   private pulse = 0;
 
@@ -328,6 +330,8 @@ export class StoryMode {
       app.refresh(false);
       app.say(BABA.nepa);
     } else if (beat === 'advice') {
+      this.adviceStart = app.dayScore;
+      this.fixes = 0;
       app.say(BABA.afterNepa);
       app.setHint('Pinch Baba, the carved figure, for advice.');
     } else if (beat === 'evening') {
@@ -341,6 +345,9 @@ export class StoryMode {
       const j = journal(app.design, this.story);
       this.card.setText(`${j.title}\n${j.lines.join('\n')}\nPinch for tomorrow.`);
       this.card.mesh.visible = true;
+      // Nothing on the table may sit between the eyes and the journal.
+      app.handles.setVisible(false);
+      app.setHeat(false);
       app.setHint('Pinch your journal to sleep until tomorrow.');
       this.save();
       Sfx.chime();
@@ -367,6 +374,12 @@ export class StoryMode {
       if (this.beat === 'settle') this.go('afternoon');
     }
     if (event === 'accepted' && this.beat === 'advice') {
+      // Baba keeps advising until the house is clearly cooler.
+      this.fixes += 1;
+      if (app.dayScore - this.adviceStart < 8 && this.fixes < 3) {
+        app.setHint('Better. Pinch Baba again: there is more to do.');
+        return;
+      }
       this.t = 0;
       this.beat = 'evening';
       this.hourGoal = null;
@@ -491,6 +504,7 @@ export class StoryMode {
 
   private nextDay(): void {
     this.card.mesh.visible = false;
+    this.app.handles.setVisible(this.app.mode === 'table' && !this.app.compareOn);
     this.story.day += 1;
     this.story.power = true;
     this.save();

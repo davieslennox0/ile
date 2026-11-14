@@ -9,7 +9,8 @@ OUT = "/tmp/v3"
 SR = 44100
 marks = json.load(open(f"{OUT}/marks.json"))
 vo = {v["name"]: v["seconds"] for v in json.load(open(f"{OUT}/vo.json"))}
-total = next(m["start"] for m in marks if m["name"] == "end") + 0.5
+stop = [m["start"] for m in marks if m["name"] in ("stop", "end")]
+total = max(stop)
 n = int(total * SR)
 mix = np.zeros(n)
 rng = np.random.default_rng(7)
@@ -26,7 +27,10 @@ def strike(freq, partials, decay, length, gain):
 
 def put(sound, at):
     i = int(at * SR)
-    if i >= n:
+    if i < 0:  # a hit nudged just before the start: drop the part before 0
+        sound = sound[-i:]
+        i = 0
+    if i >= n or len(sound) == 0:
         return
     j = min(n, i + len(sound))
     mix[i:j] += sound[: j - i]
@@ -38,7 +42,6 @@ high = strike(622, BELL, 0.22, 0.9, 0.16)
 low = strike(466, BELL, 0.26, 1.0, 0.18)
 
 # The 12/8 "standard" bell pattern: strokes on these eighth-notes of the bar.
-eighth = 60 / 104 / 3 * 2 / 2 * 1.0  # dotted-quarter pulse at 104 bpm
 eighth = (60 / 104) / 1.5
 PATTERN = [(0, low), (2, high), (4, high), (5, low), (7, high), (9, high), (11, low)]
 bar = eighth * 12
@@ -57,7 +60,7 @@ while t < total:
 
 # A low gong marks each new chapter.
 for m in marks:
-    if m["name"].startswith("cap:") or m["name"] == "end":
+    if m["name"].startswith("cap:") or m["name"] in ("end", "stop"):
         continue
     put(strike(98, GONG, 3.2, 7.0, 0.3), m["start"])
 put(strike(73.4, GONG, 4.5, 9.0, 0.38), next(m["start"] for m in marks if m["name"] == "end"))

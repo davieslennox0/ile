@@ -276,14 +276,10 @@ await section('baba', async () => {
     await tap(yes, 'right', 'accept');
     await rest(0.5);
     await rig.hold(TAKE ? 1.6 : 0.4);
-    const s = await info();
-    if (s.score - before >= 10 || s.beat !== 'advice') {
-      if (s.score - before >= 10) break;
-    }
-    // After the first fix the story moves to evening; later fixes just help.
-    if (round === 0 && s.score - before >= 10) break;
+    // The story stays on Baba until the house is clearly cooler.
+    if ((await info()).beat !== 'advice') break;
   }
-  await check('fix accepted, score up', (s) => s.score > before);
+  await check('fix accepted, score up clearly', (s) => s.score >= before + 8 || s.beat !== 'advice');
   console.log('    score', before, '->', (await info()).score);
 });
 
@@ -302,7 +298,8 @@ await section('day2', async () => {
   await rig.hold(2.5);
   await check('day 2', (s) => s.day === 2 && !s.card);
   // Baba's prompt: a room for your sister. Lay it by hand.
-  await lay(5.2, -5.8, 8.8, -2.2);
+  // Start well clear of the existing wall and its window panel.
+  await lay(6.0, -5.6, 9.4, -2.2);
   await check('sister room', (s) => s.rooms === 5);
   await rest();
 });
@@ -316,6 +313,8 @@ async function sweepSun(seconds) {
 }
 
 await section('years', async () => {
+  // From here on the picture is the house itself: no panels.
+  await app(() => { const a = globalThis.ile; a.cinematic = true; a.hud.visible = false; });
   // Off camera between cuts: the house as it stands a year on, then ten.
   await app(async () => {
     const st = await import('/src/model/state.ts');
@@ -367,7 +366,7 @@ await section('end', async () => {
   await rig.hold(3.0);
 });
 
-rig.marks.push({ name: 'end', start: rig.now() });
+rig.marks.push({ name: 'stop', start: rig.now() });
 fs.writeFileSync(MARKS, JSON.stringify(rig.marks, null, 1));
 await rig.browser.close();
 console.log(fails.length ? `FAILED: ${fails.join(' | ')}` : 'ALL OK', '·', rig.frameNo, 'frames', rig.now().toFixed(1), 's', rig.wall());

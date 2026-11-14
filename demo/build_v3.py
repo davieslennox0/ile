@@ -8,8 +8,10 @@ FPS = int(os.environ.get("ILE_FPS", "30"))
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 marks = json.load(open(f"{OUT}/marks.json"))
 vo = {v["name"]: v["seconds"] for v in json.load(open(f"{OUT}/vo.json"))}
-start = {m["name"]: m["start"] for m in marks}
-total = start["end"]
+start = {}
+for m in marks:
+    start.setdefault(m["name"], m["start"])  # first mark of a name is the section start
+total = max(m["start"] for m in marks if m["name"] in ("stop", "end"))
 names = [n for n, _, _ in LINES if n in start]
 subs = {n: (sub or say) for n, say, sub in LINES}
 
@@ -17,7 +19,8 @@ inputs = ["-framerate", str(FPS), "-i", f"{OUT}/frames/f%05d.jpg", "-i", f"{OUT}
 for n in names:
     inputs += ["-i", f"{OUT}/vo_{n}.wav"]
 
-filters = ["[0:v]setsar=1[v0]"]
+fade_at = max(0.0, total - 1.2)
+filters = [f"[0:v]setsar=1,fade=t=out:st={fade_at:.2f}:d=1.2[v0]"]
 last = "v0"
 count = 0
 
@@ -40,9 +43,10 @@ def text(body, t0, t1, y, size=30, color="white", box=0.6):
 text("Captured in Meta VR Glasses emulator  ·  hands only, no controllers", 0.2, min(6.5, start.get("rooms", 6.5)), 26, 24)
 for m in marks:
     if m["name"].startswith("cap:"):
-        text(m["name"][4:], m["start"] + 0.1, m["start"] + 3.2, 60, 44, "0xf2b23e", 0.7)
-if "end" in vo and "end" in start:
-    pass
+        text(m["name"][4:], m["start"] + 0.1, m["start"] + 3.2, 300, 52, "0xf2b23e", 0.65)
+if "end" in start:
+    text("Ilé", start["end"] + 0.1, total, 250, 96, "0xf2b23e", 0.5)
+    text("Built by hand.", start["end"] + 0.4, total, 380, 44, "white", 0.5)
 # Subtitles.
 for name in names:
     lines = textwrap.wrap(subs[name], 64)

@@ -118,6 +118,8 @@ export class App {
   room: RoomId | null = null;
   heatOn = false;
   compareOn = false;
+  /** Keep the HUD hidden (used for cinematic shots in recorded demos). */
+  cinematic = false;
 
   private readonly ghost = new BuildingView({ ghost: true });
   private readonly ghostMarks: Mesh<BoxGeometry, MeshBasicMaterial>[] = [];
@@ -132,6 +134,10 @@ export class App {
   private editStart: Design | null = null;
   private now: DesignScore;
   private day: DayScore;
+  /** Today's Ilé Score (whole-day comfort, 0–100). */
+  get dayScore(): number {
+    return this.day.overall;
+  }
   private shownHeight = 0;
 
   private readonly sun = new DirectionalLight(0xfff0d0, 2.6);
@@ -615,6 +621,7 @@ export class App {
   /** The story moved to another beat: update what the Skip token does. */
   storyChanged(): void {
     this.skip.mesh.visible = this.onboarding.active || this.story.scripted;
+    this.skip.setText(this.story.scripted ? 'Skip scene' : 'Skip intro');
     this.refresh(false);
   }
 
@@ -670,7 +677,7 @@ export class App {
     }
     this.compareOn = !this.compareOn;
     this.compare.group.visible = this.compareOn;
-    this.hud.visible = !this.compareOn;
+    this.hud.visible = !this.compareOn && !this.cinematic;
     this.overlay.labels.visible = this.overlay.labels.visible && !this.compareOn;
     this.handles.setVisible(!this.compareOn);
     this.table.gizmos.visible = !this.compareOn;
@@ -775,7 +782,7 @@ export class App {
     const atTable = mode === 'table';
     this.handles.setVisible(atTable && !this.compareOn);
     this.back.mesh.visible = mode === 'inside';
-    this.hud.visible = mode !== 'shifting' && !this.compareOn;
+    this.hud.visible = mode !== 'shifting' && !this.compareOn && !this.cinematic;
     if (mode === 'shifting') {
       this.menu.close();
     } else {

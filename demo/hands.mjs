@@ -21,7 +21,10 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
   for (const f of fs.readdirSync(out)) if (f.endsWith('.jpg')) fs.unlinkSync(`${out}/${f}`);
   const browser = await chromium.launch({
     headless: true,
-    args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'],
+    // ILE_GPU=1 draws on a real (NVIDIA) GPU through EGL; otherwise software.
+    args: process.env.ILE_GPU === '1'
+      ? ['--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-webgl']
+      : ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'],
   });
   // Rehearsals run small (ILE_SMALL=1) so they finish quickly; takes are 720p.
   const small = process.env.ILE_SMALL === '1';
