@@ -128,6 +128,7 @@ export class StoryMode {
   private skyNow = { ...SKY.day };
   private skyGoal = SKY.day;
   private hourGoal: number | null = null;
+  private hourNow: number | null = null;
   private dragStart = new Vector3();
   private pulse = 0;
 
@@ -316,6 +317,7 @@ export class StoryMode {
       app.setHint('Pinch a belonging and put it where you want it.');
     } else if (beat === 'afternoon') {
       this.hourGoal = 15;
+      this.hourNow = null;
       this.setSky('day');
       app.say(BABA.afternoon);
       app.setHint('Watch the rooms as the afternoon sun arrives.');
@@ -330,6 +332,7 @@ export class StoryMode {
       app.setHint('Pinch Baba, the carved figure, for advice.');
     } else if (beat === 'evening') {
       this.hourGoal = 18;
+      this.hourNow = null;
       this.setSky('dusk');
       this.story.power = true;
       app.say(BABA.evening);
@@ -367,6 +370,7 @@ export class StoryMode {
       this.t = 0;
       this.beat = 'evening';
       this.hourGoal = null;
+      this.hourNow = null;
       // Let the cooler house sit on screen a moment before the sun sets.
       this.t = -3.5;
       app.storyChanged();
@@ -493,6 +497,7 @@ export class StoryMode {
     this.stars.visible = false;
     this.setSky('dawn');
     this.hourGoal = 8;
+    this.hourNow = null;
     this.go('free');
     const prompt = visitPrompt(this.story.day);
     this.app.say(prompt ? `Day ${this.story.day}. ${prompt}` : `Day ${this.story.day}. Good morning, neighbour.`);
@@ -536,13 +541,17 @@ export class StoryMode {
     }
     if (moved) this.applySky();
     if (this.hourGoal !== null) {
-      const h = app.design.hour;
-      const next = h + Math.sign(this.hourGoal - h) * Math.min(Math.abs(this.hourGoal - h), dt * 2.4);
-      if (Math.abs(this.hourGoal - h) < 0.26) {
+      // Track the hour as a fraction: the design snaps to quarter-hours, and
+      // at headset frame rates one tick is far less than that.
+      if (this.hourNow === null) this.hourNow = app.design.hour;
+      const diff = this.hourGoal - this.hourNow;
+      this.hourNow += Math.sign(diff) * Math.min(Math.abs(diff), dt * 2.4);
+      if (Math.abs(this.hourGoal - this.hourNow) < 1e-3) {
         app.setHour(this.hourGoal, true);
         this.hourGoal = null;
+        this.hourNow = null;
       } else {
-        app.setHour(next, true);
+        app.setHour(this.hourNow, true);
       }
     }
     const dusk = this.skyGoal === SKY.dusk;

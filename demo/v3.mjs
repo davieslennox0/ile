@@ -8,14 +8,18 @@ import { FPS, findRoomAim, openRig } from './hands.mjs';
 
 const TAKE = process.env.ILE_TAKE === '1';
 const ONLY = (process.env.ILE_ONLY || '').split(',').filter(Boolean);
-const OUT = TAKE ? '/tmp/v3' : '/tmp/v3-rehearsal';
+const OUT = TAKE ? '/tmp/v3/frames' : '/tmp/v3-rehearsal';
+const MARKS = TAKE ? '/tmp/v3/marks.json' : '/tmp/v3-rehearsal/marks.json';
 const vo = fs.existsSync('/tmp/v3/vo.json')
   ? Object.fromEntries(JSON.parse(fs.readFileSync('/tmp/v3/vo.json', 'utf8')).map((v) => [v.name, v.seconds]))
   : {};
 
 const rig = await openRig({ out: OUT, pitch: -0.34 });
 const page = rig.page;
-const REST = { right: [0.2, 0.97, -0.33], left: [-0.2, 0.97, -0.33] };
+// Resting and raised hand positions keep clear of the grips and the mud
+// station, so a pinch meant for the gaze target never grabs something nearby.
+const REST = { right: [0.24, 1.0, -0.2], left: [-0.24, 1.0, -0.2] };
+const RAISED = { right: [0.13, 1.13, -0.36], left: [-0.13, 1.13, -0.36] };
 const LOOK = [0, 1.0, -0.62];
 const fails = [];
 
@@ -36,7 +40,7 @@ async function check(label, ok) {
   if (!pass) fails.push(label);
   // A take that has gone wrong is not worth hours of rendering.
   if (!pass && TAKE) {
-    fs.writeFileSync(`${OUT}/marks.json`, JSON.stringify(rig.marks, null, 1));
+    fs.writeFileSync(MARKS, JSON.stringify(rig.marks, null, 1));
     console.log(`ABORTED at "${label}"`, JSON.stringify(s));
     await rig.browser.close();
     process.exit(1);
@@ -58,7 +62,7 @@ async function section(name, fn, tail = 0.6) {
 
 /** Look at a point, raise the hand, pinch and release. */
 async function tap(point, hand = 'right', want = null) {
-  const up = hand === 'right' ? [0.16, 1.04, -0.41] : [-0.16, 1.04, -0.41];
+  const up = RAISED[hand];
   await rig.move({ gaze: point, [hand]: up }, 0.5);
   await rig.settle();
   const h = await hover();
@@ -71,7 +75,7 @@ async function tap(point, hand = 'right', want = null) {
 }
 
 /** Look at a point, pinch, move the hand by `by` metres, release. */
-async function pull(point, by, seconds = 0.9, at = [0.16, 1.03, -0.41]) {
+async function pull(point, by, seconds = 0.9, at = RAISED.right) {
   await rig.move({ gaze: point, right: at }, 0.5);
   await rig.hold(0.2);
   const h = await hover();
@@ -108,7 +112,7 @@ async function enterRoom(preferred) {
   for (const id of order) {
     const aim = await findRoomAim(rig, id);
     if (!aim) continue;
-    await rig.move({ gaze: aim, right: [0.16, 1.04, -0.41] }, 0.5);
+    await rig.move({ gaze: aim, right: RAISED.right }, 0.5);
     await rig.settle();
     if ((await hover()) !== `room-${id}`) continue;
     await rig.pinch('right', 1, 0.18);
@@ -364,6 +368,6 @@ await section('end', async () => {
 });
 
 rig.marks.push({ name: 'end', start: rig.now() });
-fs.writeFileSync(`${OUT}/marks.json`, JSON.stringify(rig.marks, null, 1));
+fs.writeFileSync(MARKS, JSON.stringify(rig.marks, null, 1));
 await rig.browser.close();
 console.log(fails.length ? `FAILED: ${fails.join(' | ')}` : 'ALL OK', '·', rig.frameNo, 'frames', rig.now().toFixed(1), 's', rig.wall());
