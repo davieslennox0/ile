@@ -70,11 +70,12 @@ const STEPS: Record<Exclude<Step, 'done'>, StepDef> = {
 export const FREE_HINT = 'Sculpt freely. Hold a palm up for tools.';
 
 /** The next thing to do when building a house from an empty plot. */
-export function scratchHint(d: Design): string {
+export function scratchHint(d: Design, mud?: { ready: boolean; hint(): string }): string {
   if (d.rooms.length === 0) return 'Pinch and drag on the plot to lay your first room.';
   if (d.wallHeight === 0) {
     if (d.rooms.length < 3) return 'Lay more rooms around an open middle.';
     if (!d.court && findEnclosedGap(d)) return 'Pinch the open middle to make it a courtyard.';
+    if (mud && !mud.ready) return mud.hint();
     return 'Pinch the white spire and pull up to raise the walls.';
   }
   if (!d.roof) return 'Hold a palm up and choose Roof.';

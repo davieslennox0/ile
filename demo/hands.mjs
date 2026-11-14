@@ -23,7 +23,9 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
     headless: true,
     args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'],
   });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, ignoreHTTPSErrors: true });
+  // Rehearsals run small (ILE_SMALL=1) so they finish quickly; takes are 720p.
+  const small = process.env.ILE_SMALL === '1';
+  const context = await browser.newContext({ viewport: small ? { width: 480, height: 270 } : { width: 1280, height: 720 }, ignoreHTTPSErrors: true });
   const page = await context.newPage();
   page.on('console', (m) => { const t = m.text(); if (t.includes('[ile]')) console.log('  page:', t.slice(0, 120)); });
   page.on('pageerror', (e) => console.log('  PAGEERROR', e.message.slice(0, 300)));
@@ -131,6 +133,8 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
       });
     }
   };
+  /** Wait until a new gaze or hand pose has reached the app (a few frames). */
+  rig.settle = async () => { for (let i = 0; i < 7; i += 1) await rig.frame(); };
   rig.hold = async (seconds) => { for (let i = 0; i < Math.max(1, Math.round(seconds * FPS)); i += 1) await rig.frame(); };
 
   /** Ease any of: hands, gaze, pitch, yaw to new values over `seconds`. */
@@ -235,7 +239,7 @@ export async function findRoomAim(rig, room) {
     for (const fx of [0, 0.25, -0.25, 0.4, -0.4]) {
       const p = await rig.local((r.x0 + r.x1) / 2 + fx * (r.x1 - r.x0), 0.02, (r.z0 + r.z1) / 2 + fz * (r.z1 - r.z0));
       rig.gaze = p;
-      await rig.hold(0.2); // the gaze takes a few frames to settle
+      await rig.settle();
       if ((await rig.state()).hover.right === `room-${room}`) { found = p; break; }
     }
     if (found) break;

@@ -125,7 +125,8 @@ export class Handles {
       app.gestures.add({
         id: `line-${i}`,
         object: w,
-        radius: 1.1,
+        radius: 0.8,
+        rayRadius: 0.6,
         enabled: shown(w),
         onHover: hoverFx(w),
         onDragStart: () => this.begin(),
@@ -148,6 +149,7 @@ export class Handles {
         id: `eave-${side}`,
         object: e,
         radius: 1.5,
+        rayRadius: 0.6,
         enabled: shown(e),
         onHover: hoverFx(e),
         onDragStart: () => this.begin(),
@@ -172,6 +174,7 @@ export class Handles {
       id: 'height',
       object: this.spire,
       radius: 1.7,
+      rayRadius: 0.9,
       enabled: shown(this.spire),
       onHover: hoverFx(this.spire),
       onDragStart: () => this.begin(),
@@ -204,6 +207,7 @@ export class Handles {
       id: 'court-corner',
       object: this.corner,
       radius: 1.6,
+      rayRadius: 0.65,
       enabled: shown(this.corner),
       onHover: hoverFx(this.corner),
       onDragStart: () => this.begin(),
@@ -437,7 +441,8 @@ export class Handles {
       const mid = (line.from + line.to) / 2;
       grip.userData.axis = line.axis;
       grip.userData.c = line.c;
-      grip.position.set(line.axis === 'x' ? line.c : mid, Math.max(0.6, h * 0.45), line.axis === 'x' ? mid : line.c);
+      // On top of the wall: clear of the opening panels and of the view into rooms.
+      grip.position.set(line.axis === 'x' ? line.c : mid, h > 0 ? h + 0.4 : 0.6, line.axis === 'x' ? mid : line.c);
     });
 
     const b = bounds(d);
@@ -458,7 +463,8 @@ export class Handles {
 
     // The spire stands over the largest room.
     const big = d.rooms.reduce<Rect | null>((p, r) => (!p || rectArea(r) > rectArea(p) ? r : p), null);
-    this.spire.visible = on && built;
+    // On an empty plot the walls need mud first.
+    this.spire.visible = on && built && (d.wallHeight > 0 || this.app.mud.ready);
     if (big) this.spire.position.set(rectCx(big), h + (roofed ? 2.6 : 1.4), rectCz(big));
 
     this.corner.visible = on && !!d.court;

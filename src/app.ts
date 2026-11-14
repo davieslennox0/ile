@@ -54,6 +54,7 @@ import {
 import { ScaleShift } from './scaleshift/shift.ts';
 import { StoryMode } from './story/mode.ts';
 import { naira } from './story/story.ts';
+import { MudPit } from './scene/mud.ts';
 import { Table } from './scene/table.ts';
 import { Compare } from './ui/compare.ts';
 import { Label, PALETTE } from './ui/label.ts';
@@ -107,6 +108,8 @@ export class App {
   readonly view = new BuildingView({ shadows: true });
   readonly handles: Handles;
   readonly shift: ScaleShift;
+  /** Where building mud is mixed by hand before walls can rise. */
+  readonly mud: MudPit;
   /** Story mode: savings, belongings, the beats of the day. */
   readonly story: StoryMode;
 
@@ -266,6 +269,9 @@ export class App {
     this.compare.group.rotation.x = 0.3;
     this.table.group.add(this.compare.group);
 
+    this.mud = new MudPit(this);
+    this.mud.group.visible = false;
+    this.table.site.add(this.mud.group);
     this.handles = new Handles(this);
     this.shift = new ScaleShift(this);
     this.root.add(this.shift.vignette);
@@ -418,6 +424,8 @@ export class App {
     this.before = isComplete(this.design) ? cloneDesign(this.design) : null;
     this.shownHeight = this.design.wallHeight;
     this.history.clear();
+    // Mud is only mixed when a house is raised from an empty plot.
+    this.mud.reset(!this.fromScratch || this.design.wallHeight > 0);
     this.mode = 'table';
     this.showStart(false);
     this.handles.setVisible(true);
@@ -430,11 +438,12 @@ export class App {
         this.design = withHour(home, 8);
         this.before = isComplete(this.design) ? cloneDesign(this.design) : null;
         this.shownHeight = this.design.wallHeight;
+        this.mud.reset(this.design.wallHeight > 0);
         this.refresh();
       }
-      this.setHint(scratchHint(this.design));
+      this.setHint(scratchHint(this.design, this.mud));
     } else if (kind === 'compound') this.onboarding.start();
-    else this.setHint(scratchHint(this.design));
+    else this.setHint(scratchHint(this.design, this.mud));
     this.emit(`start:${kind}`);
   }
 
@@ -570,7 +579,7 @@ export class App {
       this.toast('Your house stands. Now make it cool.', 3);
       Sfx.chime();
     }
-    if (this.fromScratch && !this.onboarding.active) this.setHint(scratchHint(this.design));
+    if (this.fromScratch && !this.onboarding.active) this.setHint(scratchHint(this.design, this.mud));
     this.emit(`edit:${kind}`);
   }
 
@@ -596,6 +605,13 @@ export class App {
     for (const label of this.overlay.labels.children) label.scale.setScalar(scale);
   }
 
+  /** The mud pit changed: new hint, and the spire appears once it is ready. */
+  mudChanged(): void {
+    if (this.fromScratch && !this.onboarding.active) this.setHint(scratchHint(this.design, this.mud));
+    this.handles.layout(this.design);
+    if (this.mud.ready) this.emit('edit:mud');
+  }
+
   /** The story moved to another beat: update what the Skip token does. */
   storyChanged(): void {
     this.skip.mesh.visible = this.onboarding.active || this.story.scripted;
@@ -613,7 +629,7 @@ export class App {
     this.clearProposal();
     this.refresh();
     this.save();
-    if (this.fromScratch && !this.onboarding.active) this.setHint(scratchHint(this.design));
+    if (this.fromScratch && !this.onboarding.active) this.setHint(scratchHint(this.design, this.mud));
     Sfx.dismiss();
     this.toast('Undone');
   }
@@ -688,6 +704,10 @@ export class App {
       this.view.rebuild(d, this.shownHeight);
       this.day = scoreDay(d, this.story?.comfort());
       this.shift?.reseat();
+    }
+    if (this.mud) {
+      this.mud.group.visible =
+        this.fromScratch && d.rooms.length > 0 && d.wallHeight === 0 && (this.mode === 'table' || this.mode === 'start');
     }
     this.now = scoreDesign(d, d.hour, this.story?.comfort());
     if (this.heatOn && !isComplete(d)) this.heatOn = false;
@@ -921,7 +941,7 @@ export class App {
 
   onboardingChanged(): void {
     this.skip.mesh.visible = this.onboarding.active || this.story.scripted;
-    if (!this.onboarding.active && this.fromScratch) this.setHint(scratchHint(this.design));
+    if (!this.onboarding.active && this.fromScratch) this.setHint(scratchHint(this.design, this.mud));
   }
 
   private openMenu(at: Vector3, _hand?: Hand): void {

@@ -51,6 +51,8 @@ export interface Target {
   object: Object3D;
   /** Pick radius in the object's own units; scaled by its world scale. */
   radius: number;
+  /** Tighter radius for ray and gaze picking; direct pinches use `radius`. */
+  rayRadius?: number;
   /** Pick by ray-casting the mesh instead of a sphere (floors, panels). */
   surface?: boolean;
   /** A surface that can also be pinched directly, within `radius`. */
@@ -108,8 +110,8 @@ type JointFrame = {
 
 const PINCH_ON = 0.018;
 const PINCH_OFF = 0.035;
-const NEAR_REACH = 0.03;
-const RAY_SLOP = 0.012;
+const NEAR_REACH = 0.015;
+const RAY_SLOP = 0.008;
 const PALM_HOLD = 0.5;
 const FLICK_SPEED = 1.7;
 const FLICK_COOLDOWN = 0.9;
@@ -459,7 +461,7 @@ export class Gestures {
       t.object.getWorldPosition(_v1);
       const along = _v2.copy(_v1).sub(p.ray.origin).dot(p.ray.direction);
       if (along <= 0.02) continue;
-      const radius = t.radius * t.object.getWorldScale(_v3).x + RAY_SLOP * along;
+      const radius = (t.rayRadius ?? t.radius) * t.object.getWorldScale(_v3).x + RAY_SLOP * along;
       const miss = Math.sqrt(p.ray.distanceSqToPoint(_v1));
       if (miss > radius) continue;
       const score = miss / radius + along * 0.05;
