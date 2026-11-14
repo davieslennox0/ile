@@ -352,6 +352,7 @@ test('story: a fan cools its room until NEPA takes light', () => {
   const story = newStory();
   const room = d.rooms[0].id;
   story.items.push({ item: 'fan', room, x: 0, y: 0, z: 0, rot: 0 });
+  story.fanOn = true;
   const bare = scoreDesign(d, 15).rooms[room].comfort;
   const fanned = scoreDesign(d, 15, comfortContext(story)).rooms[room].comfort;
   assert.ok(fanned > bare + 10, 'the fan helps');
@@ -377,7 +378,11 @@ test('story: saves and loads, and survives junk', () => {
   s.savings = 123_500;
   s.movedIn = true;
   s.items.push({ item: 'photo', room: 'r1', x: 1, y: 1.5, z: -2, rot: 0 });
+  s.fanOn = true;
+  s.joy = 70;
+  s.extras = { ...s.extras, floors: 2, shop: 1 };
   assert.deepEqual(deserializeStory(serializeStory(s)), s);
   assert.equal(deserializeStory('{"v":9}'), null);
+  assert.equal(deserializeStory('{"v":1,"items":[]}'), null);
   assert.equal(deserializeStory('nope'), null);
 });

@@ -18,9 +18,12 @@ import {
   type RoomId,
 } from '../model/state.ts';
 import prompts from './prompts.json' with { type: 'json' };
+import { NO_EXTRAS, type Extras } from '../world/extras.ts';
 
 export const START_SAVINGS = 600_000;
 export const BELONGINGS = ['mattress', 'fan', 'pot', 'photo', 'rug', 'lantern'] as const;
+export const START_ENERGY = 100;
+export const START_JOY = 35;
 export type ItemId = (typeof BELONGINGS)[number];
 
 export const ITEM_LABEL: Record<ItemId, string> = {
@@ -44,17 +47,25 @@ export interface Placed {
 }
 
 export interface Story {
-  v: 1;
+  v: 2;
   day: number;
   savings: number;
   movedIn: boolean;
   items: Placed[];
   /** Mains power; false during the afternoon cut. */
   power: boolean;
+  /** The standing fan's switch. */
+  fanOn: boolean;
+  energy: number;
+  joy: number;
+  extras: Extras;
 }
 
 export function newStory(): Story {
-  return { v: 1, day: 1, savings: START_SAVINGS, movedIn: false, items: [], power: true };
+  return {
+    v: 2, day: 1, savings: START_SAVINGS, movedIn: false, items: [], power: true, fanOn: false,
+    energy: START_ENERGY, joy: START_JOY, extras: { ...NO_EXTRAS },
+  };
 }
 
 export function naira(amount: number): string {
@@ -101,7 +112,7 @@ export function buildCost(from: Design, to: Design): number {
 export function comfortContext(story: Story | null): ComfortContext {
   if (!story) return {};
   return {
-    fans: story.items.filter((i) => i.item === 'fan').map((i) => i.room),
+    fans: story.fanOn ? story.items.filter((i) => i.item === 'fan').map((i) => i.room) : [],
     power: story.power,
   };
 }
@@ -161,20 +172,32 @@ export function serializeStory(s: Story): string {
 export function deserializeStory(json: string): Story | null {
   try {
     const raw = JSON.parse(json) as Partial<Story> | null;
-    if (!raw || raw.v !== 1 || !Array.isArray(raw.items)) return null;
+    if (!raw || raw.v !== 2 || !Array.isArray(raw.items)) return null;
     const num = (v: unknown, f: number) => (typeof v === 'number' && Number.isFinite(v) ? v : f);
     const items: Placed[] = [];
     for (const i of raw.items) {
       if (!i || !BELONGINGS.includes(i.item) || typeof i.room !== 'string') continue;
       items.push({ item: i.item, room: i.room, x: num(i.x, 0), y: num(i.y, 0), z: num(i.z, 0), rot: num(i.rot, 0) });
     }
+    const e = (raw.extras ?? {}) as Partial<Extras>;
     return {
-      v: 1,
+      v: 2,
       day: Math.max(1, Math.round(num(raw.day, 1))),
       savings: Math.max(0, num(raw.savings, START_SAVINGS)),
       movedIn: raw.movedIn === true,
       items,
       power: true,
+      fanOn: raw.fanOn === true,
+      energy: Math.max(0, Math.min(100, num(raw.energy, START_ENERGY))),
+      joy: Math.max(0, Math.min(100, num(raw.joy, START_JOY))),
+      extras: {
+        floors: Math.max(1, Math.min(3, Math.round(num(e.floors, 1)))),
+        garden: e.garden === true,
+        solar: e.solar === true,
+        shop: Math.max(0, Math.min(2, Math.round(num(e.shop, 0)))),
+        car: e.car === true,
+        party: e.party === true,
+      },
     };
   } catch {
     return null;

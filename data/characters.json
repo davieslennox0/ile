@@ -1,0 +1,31 @@
+{
+  "family": {
+    "player": { "attire": "kaftan", "main": 14248235, "accent": 15986662 },
+    "baba": { "attire": "agbada", "main": 15986662, "accent": 3104680, "skin": 4598294 },
+    "adaeze": { "attire": "dress", "main": 15986662, "accent": 15908626, "print": 0 },
+    "tolu": { "attire": "school", "main": 2042436, "accent": 14169631, "scale": 0.6 }
+  },
+  "builder": { "attire": "worker", "main": 3426654 },
+  "market": { "attire": "market", "main": 15986662, "accent": 3122575, "print": 3 },
+  "buka": { "attire": "iro", "main": 15986662, "accent": 14248235, "print": 1 },
+  "kids": [
+    { "attire": "school", "main": 2042436, "accent": 14169631, "scale": 0.6 },
+    { "attire": "tshirt", "main": 14169631, "scale": 0.6 },
+    { "attire": "tshirt", "main": 3122575, "scale": 0.6 },
+    { "attire": "school", "main": 2042436, "accent": 3104680, "scale": 0.6 }
+  ],
+  "crowd": [
+    { "attire": "agbada", "main": 3104680, "accent": 15986662 },
+    { "attire": "iro", "main": 15986662, "accent": 7998090, "print": 2 },
+    { "attire": "office", "main": 2042436, "accent": 14169631 },
+    { "attire": "dress", "main": 15986662, "accent": 3122575, "print": 4 },
+    { "attire": "kaftan", "main": 1993290, "accent": 15986662 },
+    { "attire": "tshirt", "main": 15908626 },
+    { "attire": "market", "main": 15986662, "accent": 14248235, "print": 5 },
+    { "attire": "office", "main": 3426654, "accent": 3104680 },
+    { "attire": "worker", "main": 3426654 },
+    { "attire": "dress", "main": 15986662, "accent": 7998090, "print": 1 },
+    { "attire": "kaftan", "main": 8009041, "accent": 14600762 },
+    { "attire": "tshirt", "main": 3122575 }
+  ]
+}

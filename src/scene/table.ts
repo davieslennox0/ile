@@ -32,9 +32,9 @@ import { LIMITS } from '../model/state.ts';
 import { Label, PALETTE } from '../ui/label.ts';
 
 export const MINI_SCALE = 1 / 50;
-export const PLOT_SIZE = 26;
+export const PLOT_SIZE = 24;
 export const SUN_RADIUS = 13.5;
-export const KNOB_RADIUS = 12.2;
+export const KNOB_RADIUS = 11.4;
 /** Height of the site origin above the table top, in table units. */
 export const SITE_LIFT = 0.26 * MINI_SCALE;
 /** Table placement relative to the seated user's eyes. */
@@ -69,10 +69,10 @@ export class Table {
     this.group.name = 'ile-table';
     const wood = new MeshStandardMaterial({ color: 0x7a4a24, roughness: 0.7 });
     const dark = new MeshStandardMaterial({ color: 0x4d2c14, roughness: 0.8 });
-    const top = new Mesh(new BoxGeometry(0.66, 0.03, 0.66), wood);
+    const top = new Mesh(new BoxGeometry(0.96, 0.03, 0.76), wood);
     top.position.y = -0.015;
     top.receiveShadow = true;
-    const rim = new Mesh(new BoxGeometry(0.7, 0.014, 0.7), dark);
+    const rim = new Mesh(new BoxGeometry(1.0, 0.014, 0.8), dark);
     rim.position.y = -0.034;
     const leg = new Mesh(new CylinderGeometry(0.035, 0.06, 0.7, 16), dark);
     leg.position.y = -0.39;
@@ -89,7 +89,7 @@ export class Table {
     // Plot: the ground the plinth sits on.
     this.plot = new Mesh(
       new PlaneGeometry(PLOT_SIZE, PLOT_SIZE),
-      new MeshLambertMaterial({ color: 0xc58a55 }),
+      new MeshLambertMaterial({ color: 0xd9b98a }),
     );
     this.plot.rotation.x = -Math.PI / 2;
     this.plot.position.y = -0.24;

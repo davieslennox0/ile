@@ -323,6 +323,8 @@ export class BuildingView {
   private readonly opts: BuildingViewOptions;
   private readonly floorGeo = new PlaneGeometry(1, 1);
   private roofOpacity = 1;
+  /** Upper storeys sit on the walls, so the pitched roof is not drawn. */
+  flatTop = false;
 
   constructor(opts: BuildingViewOptions = {}) {
     this.opts = opts;
@@ -381,7 +383,7 @@ export class BuildingView {
 
     if (this.roof) {
       this.roof.geometry.dispose();
-      const show = d.roof && shownHeight >= 2;
+      const show = d.roof && shownHeight >= 2 && !this.flatTop;
       this.roof.geometry = show ? roofGeometry(d, rs, height) : new BufferGeometry();
       this.roof.visible = show && this.roofOpacity > 0.02;
     }

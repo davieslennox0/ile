@@ -55,6 +55,10 @@ import { ScaleShift } from './scaleshift/shift.ts';
 import { StoryMode } from './story/mode.ts';
 import { naira } from './story/story.ts';
 import { MudPit } from './scene/mud.ts';
+import { Street } from './people/crowd.ts';
+import { DayNight } from './world/daynight.ts';
+import { Diorama } from './world/diorama.ts';
+import { ExtrasView } from './world/extras.ts';
 import { Table } from './scene/table.ts';
 import { Compare } from './ui/compare.ts';
 import { Label, PALETTE } from './ui/label.ts';
@@ -108,6 +112,14 @@ export class App {
   readonly view = new BuildingView({ shadows: true });
   readonly handles: Handles;
   readonly shift: ScaleShift;
+  /** The Yaba street block around the plot. */
+  readonly diorama = new Diorama();
+  /** People and traffic on the diorama. */
+  readonly street = new Street();
+  /** Clock, sky and night glow. */
+  readonly dayNight: DayNight;
+  /** Upper storeys, the food spot, the car, party lights. */
+  readonly extras = new ExtrasView();
   /** Where building mud is mixed by hand before walls can rise. */
   readonly mud: MudPit;
   /** Story mode: savings, belongings, the beats of the day. */
@@ -134,6 +146,11 @@ export class App {
   private editStart: Design | null = null;
   private now: DesignScore;
   private day: DayScore;
+  /** A room's whole-day comfort (0–100). */
+  roomDayScore(id: RoomId): number {
+    return this.day.rooms[id] ?? 0;
+  }
+
   /** Today's Ilé Score (whole-day comfort, 0–100). */
   get dayScore(): number {
     return this.day.overall;
@@ -189,7 +206,9 @@ export class App {
     this.now = scoreDesign(this.design);
     this.day = scoreDay(this.design);
     this.view.rebuild(this.design);
-    this.table.site.add(this.view.group, this.ghost.group);
+    this.table.site.add(this.view.group, this.ghost.group, this.diorama.group, this.street.group);
+    this.view.group.add(this.extras.group);
+    this.dayNight = new DayNight(world, this.diorama, this.root);
     this.view.group.add(this.overlay.labels);
     this.ghost.group.visible = false;
     for (let i = 0; i < 2; i += 1) {
@@ -245,7 +264,7 @@ export class App {
     const row = -0.222;
     let storySave = false;
     try {
-      storySave = !!localStorage.getItem('ile.story.v1');
+      storySave = !!localStorage.getItem('ile.story.v2');
     } catch {
       // Storage blocked: no saved home to offer.
     }
@@ -263,11 +282,11 @@ export class App {
 
     // Table tokens: the Elder figure and the Menu button.
     this.halo = this.buildElder();
-    this.elder.position.set(-0.225, 0, 0.235);
+    this.elder.position.set(-0.375, 0, 0.335);
     this.table.furniture.add(this.elder);
     this.menuToken = new Label({ width: 0.07, height: 0.07, ppm: 2400, fontScale: 0.32, round: true, bold: true, border: PALETTE.gold });
     this.menuToken.setText('Menu');
-    this.menuToken.mesh.position.set(0.225, 0.035, 0.24);
+    this.menuToken.mesh.position.set(0.375, 0.035, 0.335);
     this.menuToken.mesh.rotation.x = -0.9;
     this.table.furniture.add(this.menuToken.mesh);
 
@@ -285,6 +304,10 @@ export class App {
     this.root.add(this.menu.group);
     this.onboarding = new Onboarding(this);
     this.story = new StoryMode(this);
+    this.hud.traverse((o) => {
+      const m = (o as Mesh).material as MeshBasicMaterial | undefined;
+      if (m && 'depthTest' in m) m.depthTest = false;
+    });
     this.registerTokens();
 
     this.gestures.onPalmUp = (hand, above) => this.openMenu(above, hand);
@@ -474,7 +497,7 @@ export class App {
     this.listeners.push(listener);
   }
 
-  private emit(event: string): void {
+  emit(event: string): void {
     console.info(`[ile] ${event} · score ${this.day.overall} · ${this.mode}`);
     this.eventLog.push(event);
     this.root.name = `ile-state|${this.mode}|${this.room ?? '-'}|${this.day.overall}|${this.eventLog.slice(-6).join(',')}`;
@@ -1036,6 +1059,8 @@ export class App {
     }
 
     this.gestures.update(dt, this.clock);
+    this.street.update(dt);
+    if (!this.story.active) this.dayNight.clock = this.design.hour;
     this.shift.update(dt);
     this.menu.update(dt);
     this.onboarding.update(dt);
@@ -1054,6 +1079,8 @@ export class App {
 
     this.headPose(_pos, _quat);
     this.table.faceLabels(_pos);
+    this.dayNight.update(_pos);
+    this.badge.mesh.visible = !this.story.active && this.mode !== 'start';
     this.overlay.faceLabels(_pos);
 
     if (this.speech.length > 0 && !this.elderBusy) {

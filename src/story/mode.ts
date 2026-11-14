@@ -1,25 +1,20 @@
 /**
- * Story mode: "Your first home in Lagos".
+ * Story mode: "Build a home. Grow a life in Lagos."
  *
- * A light, skippable wrapper around the same Ilé tools. Beats:
- *   dawn arrival → Baba greets → build from scratch → move in and place your
- *   belongings → first afternoon heat → NEPA power cut → Baba's advice →
- *   evening and a journal card.
- * Savings pay for building. Returning on a later day brings one small prompt.
+ * Seven days from data/days.json. Each day: an event card and a word from
+ * Baba → a few steps the player does with their hands (build, move in,
+ * cook, care for the family, grow the house) → a journal card → salary and
+ * business income → the next morning. Savings pay for building; Energy,
+ * Comfort and Joy show how the family is doing. Progress saves every step.
  */
 
 import {
   BoxGeometry,
-  BufferGeometry,
+  ConeGeometry,
   CylinderGeometry,
-  DomeGradient,
-  Float32BufferAttribute,
   Group,
   Mesh,
-  MeshBasicMaterial,
   MeshLambertMaterial,
-  Points,
-  PointsMaterial,
   Quaternion,
   SphereGeometry,
   Vector3,
@@ -27,13 +22,32 @@ import {
 import type { App } from '../app.ts';
 import { Sfx } from '../audio.ts';
 import type { ComfortContext } from '../heat/score.ts';
+import { HomeLife } from '../interior/home.ts';
 import { WALL_THICKNESS } from '../model/building.ts';
-import { SIDES, edgeCoord, isComplete, isOpen, roomById, type Design, type Side } from '../model/state.ts';
-import { Label, PALETTE } from '../ui/label.ts';
 import {
-  BABA,
+  SIDES,
+  bounds,
+  cloneDesign,
+  edgeCoord,
+  isComplete,
+  isOpen,
+  rectCx,
+  rectCz,
+  roomById,
+  rooms,
+  type Design,
+  type Side,
+} from '../model/state.ts';
+import { MINI_SCALE } from '../scene/table.ts';
+import { EventCard, StatusStrip } from '../ui/hud.ts';
+import { Label } from '../ui/label.ts';
+import { scratchHint } from '../ui/onboarding.ts';
+import { shopSpot } from '../world/extras.ts';
+import days from '../../data/days.json' with { type: 'json' };
+import {
   BELONGINGS,
   ITEM_LABEL,
+  START_ENERGY,
   buildCost,
   comfortContext,
   deserializeStory,
@@ -41,20 +55,19 @@ import {
   naira,
   newStory,
   serializeStory,
-  visitPrompt,
   type ItemId,
   type Placed,
   type Story,
 } from './story.ts';
 
-const STORAGE_KEY = 'ile.story.v1';
-type Beat = 'arrival' | 'build' | 'movein' | 'settle' | 'afternoon' | 'nepa' | 'advice' | 'evening' | 'journal' | 'free';
-
-const SKY: Record<'dawn' | 'day' | 'dusk', { sky: number[]; equator: number[]; ground: number[] }> = {
-  dawn: { sky: [0.5, 0.6, 0.82, 1], equator: [0.99, 0.74, 0.58, 1], ground: [0.62, 0.45, 0.34, 1] },
-  day: { sky: [0.36, 0.62, 0.88, 1], equator: [0.96, 0.84, 0.66, 1], ground: [0.72, 0.5, 0.33, 1] },
-  dusk: { sky: [0.07, 0.08, 0.22, 1], equator: [0.93, 0.42, 0.26, 1], ground: [0.3, 0.2, 0.2, 1] },
-};
+const STORAGE_KEY = 'ile.story.v2';
+type StepId =
+  | 'build' | 'movein' | 'fan' | 'out' | 'afternoon' | 'nepa' | 'advice' | 'meet' | 'room' | 'dinner'
+  | 'nursery' | 'cool' | 'cot' | 'shop' | 'customers' | 'match' | 'upstairs' | 'homework' | 'big' | 'party';
+interface DayPlan { day: number; title: string; card: string; baba: string; steps: string[]; journal: string }
+const PLAN = days.days as DayPlan[];
+/** Steps that just play out (skippable); the rest wait for the player. */
+const TIMED: StepId[] = ['afternoon', 'nepa', 'meet', 'customers', 'match', 'party'];
 
 const _a = new Vector3();
 const _b = new Vector3();
@@ -65,7 +78,7 @@ function lambert(color: number, emissive = 0): MeshLambertMaterial {
 }
 
 /** Simple primitive belongings, in real metres with the origin on the floor. */
-function buildItem(id: ItemId): { group: Group; spin?: Group } {
+function buildItem(id: ItemId): { group: Group; spin?: Group; switch?: Mesh } {
   const g = new Group();
   const add = (mesh: Mesh, x = 0, y = 0, z = 0) => {
     mesh.position.set(x, y, z);
@@ -92,11 +105,11 @@ function buildItem(id: ItemId): { group: Group; spin?: Group } {
       spin.add(arm);
     }
     g.add(spin);
-    return { group: g, spin };
+    const sw = add(new Mesh(new SphereGeometry(0.06, 12, 8), lambert(0xd8361f, 0.4)), 0.12, 0.08, 0.16);
+    return { group: g, spin, switch: sw };
   } else if (id === 'pot') {
     add(new Mesh(new CylinderGeometry(0.24, 0.2, 0.26, 20), lambert(0x2a2a2a)), 0, 0.13, 0);
     add(new Mesh(new CylinderGeometry(0.25, 0.25, 0.03, 20), lambert(0x55524c)), 0, 0.275, 0);
-    add(new Mesh(new SphereGeometry(0.035, 10, 8), lambert(0x8a5a3a)), 0, 0.31, 0);
   } else if (id === 'photo') {
     add(new Mesh(new BoxGeometry(0.56, 0.44, 0.04), lambert(0x5b3418)), 0, 0, 0);
     add(new Mesh(new BoxGeometry(0.46, 0.34, 0.01), lambert(0xf2d9a6, 0.35)), 0, 0, 0.022);
@@ -109,7 +122,6 @@ function buildItem(id: ItemId): { group: Group; spin?: Group } {
   } else {
     add(new Mesh(new CylinderGeometry(0.09, 0.11, 0.06, 14), lambert(0x3a3a3a)), 0, 0.03, 0);
     add(new Mesh(new CylinderGeometry(0.075, 0.075, 0.2, 14), lambert(0xffd27a, 0.9)), 0, 0.16, 0);
-    add(new Mesh(new CylinderGeometry(0.06, 0.09, 0.05, 14), lambert(0x3a3a3a)), 0, 0.285, 0);
   }
   return { group: g };
 }
@@ -117,25 +129,31 @@ function buildItem(id: ItemId): { group: Group; spin?: Group } {
 export class StoryMode {
   active = false;
   story: Story = newStory();
+  readonly home: HomeLife;
+  readonly strip = new StatusStrip();
+  readonly event = new EventCard();
+  readonly items = new Map<ItemId, { group: Group; spin?: Group; switch?: Mesh }>();
+  readonly card: Label;
+  /** The glowing "pull up to build" marker for the food spot and new storeys. */
+  readonly rise = new Group();
+  stepId: StepId | null = null;
   private readonly app: App;
-  private beat: Beat = 'free';
+  private stepIndex = -1;
   private t = 0;
-  private clock = 0;
-  private readonly items = new Map<ItemId, { group: Group; spin?: Group }>();
+  private clockGoal: number | null = null;
   private readonly tray = new Mesh(new BoxGeometry(2.3, 0.04, 0.6), lambert(0x5b3418));
-  private readonly stars: Points<BufferGeometry, PointsMaterial>;
-  private readonly card: Label;
-  private skyNow = { ...SKY.day };
-  private skyGoal = SKY.day;
-  private hourGoal: number | null = null;
-  private hourNow: number | null = null;
-  private adviceStart = 0;
-  private fixes = 0;
+  private readonly ghost = new Group();
+  private readonly heart: Label;
   private dragStart = new Vector3();
   private pulse = 0;
+  private stepStart = 0;
+  private fixes = 0;
+  private earned = 0;
+  private riseUp = 0;
 
   constructor(app: App) {
     this.app = app;
+    this.home = new HomeLife(app);
     const g = app.view.group;
     this.tray.visible = false;
     g.add(this.tray);
@@ -152,9 +170,8 @@ export class StoryMode {
         id: `item-${id}`,
         object: pick,
         radius: 0.5,
-        enabled: () => this.active && app.mode === 'inside' && built.group.visible,
+        enabled: () => this.active && app.mode === 'inside' && built.group.visible && !this.home.task,
         onHover: (on) => {
-          // Swell from whatever size it is shown at (small on the tray).
           const base = (built.group.userData.size as number | undefined) ?? 1;
           built.group.scale.setScalar(base * (on ? 1.12 : 1));
           if (on) app.toast(ITEM_LABEL[id], 1);
@@ -165,46 +182,32 @@ export class StoryMode {
         onDrag: (info) => {
           g.updateWorldMatrix(true, false);
           const d = g.worldToLocal(_a.copy(info.position)).sub(g.worldToLocal(_b.copy(info.start)));
-          // Far things move further for the same hand movement, so a seated
-          // user can place anything in the room without leaning.
           const gain = Math.max(1, info.grab.distanceTo(info.start) / 0.4);
-          built.group.position.set(
-            this.dragStart.x + d.x * gain,
-            Math.max(0, this.dragStart.y + d.y * gain),
-            this.dragStart.z + d.z * gain,
-          );
+          built.group.position.set(this.dragStart.x + d.x * gain, Math.max(0, this.dragStart.y + d.y * gain), this.dragStart.z + d.z * gain);
         },
         onDragEnd: () => this.drop(id),
       });
+      if (built.switch) {
+        app.gestures.add({
+          id: 'fan-switch',
+          object: built.switch,
+          radius: 0.1,
+          enabled: () => this.active && app.mode === 'inside' && this.story.items.some((p) => p.item === 'fan') && !this.home.task,
+          onHover: (on) => built.switch?.scale.setScalar(on ? 1.5 : 1),
+          onClick: () => {
+            this.story.fanOn = !this.story.fanOn;
+            Sfx.tick();
+            app.toast(this.story.fanOn ? 'Fan on.' : 'Fan off.', 1.4);
+            app.refresh(false);
+            this.save();
+            if (this.stepId === 'fan' && this.story.fanOn) this.next();
+          },
+        });
+      }
     }
 
-    // Evening stars and the journal card.
-    const pts: number[] = [];
-    for (let i = 0; i < 260; i += 1) {
-      const u = Math.random() * Math.PI * 2;
-      const v = 0.12 + Math.random() * 0.85;
-      const r = 160;
-      pts.push(Math.cos(u) * Math.sqrt(1 - v * v) * r, v * r, Math.sin(u) * Math.sqrt(1 - v * v) * r);
-    }
-    const geo = new BufferGeometry();
-    geo.setAttribute('position', new Float32BufferAttribute(pts, 3));
-    this.stars = new Points(
-      geo,
-      new PointsMaterial({ color: 0xfff4d6, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false }),
-    );
-    this.stars.visible = false;
-    this.stars.frustumCulled = false;
-    app.root.add(this.stars);
-
-    this.card = new Label({
-      width: 0.74,
-      height: 0.25,
-      fontScale: 0.16,
-      bold: true,
-      bg: 'rgba(30, 16, 8, 0.96)',
-      fg: PALETTE.cream,
-      border: PALETTE.gold,
-    });
+    // Journal card: pinch to sleep until tomorrow.
+    this.card = new Label({ width: 0.74, height: 0.25, fontScale: 0.16, bold: true, bg: 'rgba(247, 234, 208, 0.98)', fg: '#2a1a0e', border: '#2a1a0e' });
     this.card.mesh.position.set(0, -0.2, 0.01);
     this.card.mesh.visible = false;
     app.hud.add(this.card.mesh);
@@ -216,6 +219,58 @@ export class StoryMode {
       enabled: () => this.active && this.card.mesh.visible && app.hud.visible,
       onClick: () => this.nextDay(),
     });
+    this.strip.mesh.position.set(0, 0.128, 0.004);
+    this.strip.mesh.visible = false;
+    app.hud.add(this.strip.mesh);
+    this.event.group.position.set(0, -0.19, 0.012);
+    app.hud.add(this.event.group);
+
+    // The rise marker: an orange arrow on the plot, pinch it and pull up.
+    const arrow = new Group();
+    arrow.add(new Mesh(new CylinderGeometry(0.22, 0.22, 1.6, 10), lambert(0xd9692b, 0.5)));
+    const tip = new Mesh(new ConeGeometry(0.55, 0.9, 12), lambert(0xd9692b, 0.5));
+    tip.position.y = 1.2;
+    arrow.add(tip);
+    this.rise.add(arrow);
+    this.rise.visible = false;
+    g.add(this.rise);
+    app.gestures.add({
+      id: 'rise',
+      object: tip,
+      radius: 1.3,
+      enabled: () => this.rise.visible && app.mode === 'table',
+      onHover: (on) => this.rise.scale.setScalar(on ? 1.25 : 1),
+      onDragStart: () => {
+        this.riseUp = 0;
+      },
+      onDrag: (info) => {
+        g.updateWorldMatrix(true, false);
+        const d = g.worldToLocal(_a.copy(info.position)).sub(g.worldToLocal(_b.copy(info.start)));
+        this.riseUp = d.y;
+        arrow.position.y = Math.max(0, Math.min(2.5, d.y));
+      },
+      onDragEnd: () => {
+        arrow.position.y = 0;
+        if (this.riseUp > 0.5) this.raise();
+        else app.toast('Pull it higher.', 1.2);
+      },
+    });
+
+    // Onboarding ghost hand: shows the first pinch-and-drag on the plot.
+    const ghostMat = new MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false });
+    for (const [x, y, z, r] of [[0, 0.012, 0.03, 0.022], [-0.006, 0, 0, 0.008], [0.006, 0, 0, 0.008]]) {
+      const s = new Mesh(new SphereGeometry(r, 12, 8), ghostMat);
+      s.position.set(x, y, z);
+      this.ghost.add(s);
+    }
+    this.ghost.scale.setScalar(1 / MINI_SCALE);
+    this.ghost.visible = false;
+    g.add(this.ghost);
+
+    this.heart = new Label({ width: 1.6, height: 1.6, ppm: 60, fontScale: 0.8, bold: true, bg: 'rgba(0,0,0,0)', fg: '#e04f3a' });
+    this.heart.setText('♥');
+    this.heart.mesh.visible = false;
+    app.table.site.add(this.heart.mesh);
 
     app.on((event) => this.onEvent(event));
   }
@@ -226,7 +281,7 @@ export class StoryMode {
     return this.load() !== null;
   }
 
-  /** Start day one on an empty plot, or come back to a saved home. */
+  /** Start Day 1 on an empty plot, or come back to a saved home. */
   begin(resume: boolean): Design | null {
     const saved = resume ? this.load() : null;
     this.active = true;
@@ -234,40 +289,41 @@ export class StoryMode {
     this.card.mesh.visible = false;
     for (const { group } of this.items.values()) group.visible = false;
     for (const p of this.story.items) this.show(p);
-    if (saved) {
-      this.setSky('dawn', true);
-      this.go('free');
-      const prompt = visitPrompt(this.story.day);
-      this.app.say(prompt ? `Day ${this.story.day}. ${prompt}` : `Day ${this.story.day}. Welcome home.`);
-      return saved.design;
-    }
-    this.setSky('dawn', true);
-    this.go('arrival');
-    return null;
+    this.strip.mesh.visible = true;
+    this.placeFamily();
+    this.startDay();
+    return saved?.design ?? null;
   }
 
   end(): void {
     this.active = false;
-    this.beat = 'free';
+    this.stepId = null;
     this.card.mesh.visible = false;
     this.tray.visible = false;
+    this.rise.visible = false;
+    this.ghost.visible = false;
+    this.strip.mesh.visible = false;
+    this.home.stop();
     for (const { group } of this.items.values()) group.visible = false;
-    this.stars.visible = false;
     this.story.power = true;
-    this.setSky('day', true);
+    this.app.street.setBuilders(false);
+    this.app.street.setQueue(0, [0, 0]);
+    this.app.street.setParty(false, [0, 0]);
+    for (const h of this.app.street.family.values()) h.group.visible = false;
   }
 
-  /** Skip the current scripted beat. */
+  /** Skip the current scene (timed steps only; building steps wait for you). */
   skip(): void {
-    if (!this.active) return;
-    const order: Beat[] = ['arrival', 'build', 'movein', 'settle', 'afternoon', 'nepa', 'advice', 'evening', 'journal'];
-    const i = order.indexOf(this.beat);
-    if (this.beat === 'build' || this.beat === 'movein' || this.beat === 'settle') this.go('free');
-    else if (i >= 0 && i < order.length - 1) this.go(order[i + 1]);
+    if (this.stepId && TIMED.includes(this.stepId)) this.next();
+    else if (this.stepId === 'advice' || this.stepId === 'cool') this.next();
   }
 
   get scripted(): boolean {
-    return this.active && this.beat !== 'free' && this.beat !== 'journal';
+    return this.active && this.stepId !== null && TIMED.includes(this.stepId);
+  }
+
+  get plan(): DayPlan | null {
+    return PLAN.find((p) => p.day === this.story.day) ?? null;
   }
 
   // ----------------------------------------------------------------- money
@@ -288,106 +344,278 @@ export class StoryMode {
     if (!this.active || cost <= 0) return;
     this.story.savings -= cost;
     this.app.toast(`Paid ${naira(cost)}. ${naira(this.story.savings)} left.`, 2.2);
+    this.story.joy = Math.min(100, this.story.joy + 2);
     this.save();
   }
 
-  /** Undo gives the money back. */
   refund(cost: number): void {
     if (!this.active || cost <= 0) return;
     this.story.savings += cost;
     this.save();
   }
 
-  /** Shown on the score badge. */
   savingsText(): string {
     return this.active ? naira(this.story.savings) : '';
   }
 
-  // ----------------------------------------------------------------- beats
+  // ------------------------------------------------------------------ days
 
-  private go(beat: Beat): void {
+  private startDay(): void {
+    const plan = this.plan;
     const app = this.app;
-    this.beat = beat;
+    app.dayNight.clock = 7.5;
+    this.clockGoal = 9;
+    this.story.power = true;
+    this.story.energy = START_ENERGY;
+    this.story.extras.party = false;
+    app.street.setParty(false, [0, 0]);
+    this.stepIndex = -1;
+    if (!plan) {
+      this.stepId = null;
+      this.event.show(`Day ${this.story.day}`, 'A new morning in Yaba. Build, cook, rest: it is your home.', 5);
+      app.setHint(scratchHint(app.design, app.mud));
+      return;
+    }
+    this.event.show(`Day ${plan.day} — ${plan.title}`, plan.card, 6);
+    app.say(plan.baba);
+    const baba = app.street.placeFamily('baba', 2.6, 13.1, Math.PI);
+    baba.setMode('wave');
+    setTimeout(() => baba.setMode('stand'), 4000);
+    this.next();
+  }
+
+  /** Move on to the day's next step, or end the day. */
+  next(): void {
+    const plan = this.plan;
+    if (!plan) return;
+    this.stepIndex += 1;
     this.t = 0;
-    if (beat === 'arrival') {
-      app.setHour(8);
-      app.say(BABA.arrival);
-    } else if (beat === 'movein') {
-      app.say(BABA.moveIn);
-      app.setHint('Point at your room and pinch to step inside.');
-    } else if (beat === 'settle') {
-      app.setHint('Pinch a belonging and put it where you want it.');
-    } else if (beat === 'afternoon') {
-      this.hourGoal = 15;
-      this.hourNow = null;
-      this.setSky('day');
-      app.say(BABA.afternoon);
+    this.story.energy = Math.max(15, this.story.energy - 9);
+    const id = plan.steps[this.stepIndex] as StepId | undefined;
+    if (!id) {
+      this.stepId = null;
+      this.endDay();
+      return;
+    }
+    this.stepId = id;
+    this.startStep(id);
+    this.save();
+    this.app.emit(`step:${id}`);
+    this.app.storyChanged();
+  }
+
+  private startStep(id: StepId): void {
+    const app = this.app;
+    const d = app.design;
+    this.stepStart = d.rooms.length;
+    this.fixes = 0;
+    this.rise.visible = false;
+    if (id === 'build') {
+      this.clockGoal = 11;
+      app.setHint(scratchHint(d, app.mud));
+    } else if (id === 'movein') {
+      this.clockGoal = 12;
+      app.setHint('Step inside: point at your room and pinch.');
+    } else if (id === 'fan') {
+      app.setHint(this.story.items.some((p) => p.item === 'fan') ? 'Pinch the red switch on the fan to turn it on.' : 'Place the standing fan, then pinch its red switch.');
+    } else if (id === 'out') {
+      app.setHint('Palm up, or pinch Table, to go back out.');
+    } else if (id === 'afternoon') {
+      this.clockGoal = 15;
       app.setHint('Watch the rooms as the afternoon sun arrives.');
-    } else if (beat === 'nepa') {
+    } else if (id === 'nepa') {
       this.story.power = false;
       this.pulse = 2.4;
       Sfx.dismiss();
       app.refresh(false);
-      app.say(BABA.nepa);
-    } else if (beat === 'advice') {
-      this.adviceStart = app.dayScore;
-      this.fixes = 0;
-      app.say(BABA.afterNepa);
+      app.say('NEPA don take light.');
+    } else if (id === 'advice') {
+      this.stepStart = app.dayScore;
+      app.say('The fan sleeps, but a good house does not need it. Ask me, my son.');
       app.setHint('Pinch Baba, the carved figure, for advice.');
-    } else if (beat === 'evening') {
-      this.hourGoal = 18;
-      this.hourNow = null;
-      this.setSky('dusk');
-      this.story.power = true;
-      app.say(BABA.evening);
-      app.setHint('Evening. The day is done.');
-    } else if (beat === 'journal') {
-      const j = journal(app.design, this.story);
-      this.card.setText(`${j.title}\n${j.lines.join('\n')}\nPinch for tomorrow.`);
-      this.card.mesh.visible = true;
-      // Nothing on the table may sit between the eyes and the journal.
-      app.handles.setVisible(false);
-      app.setHeat(false);
-      app.setHint('Pinch your journal to sleep until tomorrow.');
-      this.save();
-      Sfx.chime();
+    } else if (id === 'meet') {
+      this.clockGoal = 13;
+      app.street.placeFamily('adaeze', -17.6, -1, -Math.PI / 2);
+      app.setHint('At the buka…');
+    } else if (id === 'room') {
+      app.setHint('Adaeze is moving in. Lay a new room for her: pinch and drag on the plot.');
+    } else if (id === 'dinner') {
+      this.clockGoal = 18;
+      app.setHint('First dinner together. Step inside: point at a room and pinch.');
+    } else if (id === 'nursery') {
+      app.setHint('Lay a room for the nursery: pinch and drag on the plot.');
+    } else if (id === 'cool') {
+      this.checkNursery();
+    } else if (id === 'cot') {
+      app.setHint('Step into the nursery to set up the cot.');
+    } else if (id === 'shop') {
+      const s = shopSpot(d);
+      this.rise.position.set(s.x, 0, s.z);
+      this.rise.visible = true;
+      app.setHint(`Pinch the orange marker and pull up to build the food spot (${naira(days.costs.shop)}).`);
+    } else if (id === 'customers') {
+      const s = shopSpot(d);
+      app.street.setQueue(5, [s.x + 3, s.z + 2.2]);
+      this.story.joy = Math.min(100, this.story.joy + 8);
+      app.setHint('Customers are queueing for jollof.');
+    } else if (id === 'match') {
+      app.street.placeFamily('tolu', 20, 6, 0).setMode('walk');
+      this.story.joy = Math.min(100, this.story.joy + 8);
+      app.setHint("Tolu's first match on the street pitch.");
+    } else if (id === 'upstairs' || id === 'big') {
+      const b = bounds(d);
+      this.rise.position.set(rectCx(b), d.wallHeight * this.story.extras.floors + 1.2, rectCz(b));
+      this.rise.visible = true;
+      const cost = id === 'big' ? days.costs.big : days.costs.upstairs;
+      app.setHint(id === 'big'
+        ? `Pinch the marker and pull up: the compound rises (${naira(cost)}).`
+        : `Pinch the marker and pull up to build a second floor (${naira(cost)}).`);
+    } else if (id === 'homework') {
+      this.clockGoal = 17;
+      app.setHint("Step inside to check Tolu's homework.");
+    } else if (id === 'party') {
+      this.clockGoal = 20.5;
+      app.setHint('Night falls on the house-warming.');
     }
-    app.storyChanged();
   }
 
-  private onEvent(event: string): void {
-    if (!this.active) return;
+  private checkNursery(): void {
     const app = this.app;
-    if (event.startsWith('edit:') && (this.beat === 'arrival' || this.beat === 'build')) {
-      if (this.beat === 'arrival') this.beat = 'build';
-      if (isComplete(app.design) && !this.story.movedIn) this.go('movein');
+    const n = rooms(app.design).find((r) => r.label === 'Nursery');
+    const c = n ? app.roomDayScore(n.id) : 100;
+    if (c >= 70 || this.fixes >= 3) {
+      app.toast(`The nursery stays cool: comfort ${c}.`, 2.5);
+      this.story.joy = Math.min(100, this.story.joy + 5);
+      setTimeout(() => this.stepId === 'cool' && this.next(), 1200);
+    } else {
+      app.say(`The nursery is too hot for a baby. Comfort ${c}. Ask me how to cool it.`);
+      app.setHint('Pinch Baba for advice on the nursery.');
+    }
+  }
+
+  /** The rise marker was pulled up: build the food spot or a new storey. */
+  private raise(): void {
+    const id = this.stepId;
+    const cost = id === 'shop' ? days.costs.shop : id === 'big' ? days.costs.big : days.costs.upstairs;
+    if (!this.canAfford(cost)) {
+      this.app.toast(`That costs ${naira(cost)}. You have ${naira(this.story.savings)}.`, 3);
+      return;
+    }
+    this.spend(cost);
+    const e = this.story.extras;
+    if (id === 'shop') e.shop = 1;
+    else if (id === 'upstairs') {
+      e.floors = 2;
+      e.garden = true;
+    } else if (id === 'big') {
+      e.floors = 3;
+      e.solar = true;
+      e.car = true;
+      e.shop = 2;
+    }
+    this.story.joy = Math.min(100, this.story.joy + 8);
+    Sfx.chime();
+    this.rise.visible = false;
+    this.app.refresh();
+    this.app.emit('edit:raise');
+    this.next();
+  }
+
+  private endDay(): void {
+    const plan = this.plan;
+    this.clockGoal = Math.max(this.app.dayNight.clock, 18.4);
+    const salary = this.story.day >= 2 ? days.salary : 0;
+    const business = this.story.extras.shop > 0 ? days.business * this.story.extras.shop : 0;
+    this.earned = salary + business;
+    setTimeout(() => {
+      const j = journal(this.app.design, this.story);
+      const lines = [plan?.journal ?? '', j.lines[0] ?? ''];
+      if (this.earned > 0) lines.push(`Earned today: ${naira(this.earned)}.`);
+      this.card.setText(`${j.title}\n${lines.filter(Boolean).join('\n')}\nPinch to sleep until tomorrow.`);
+      this.card.mesh.visible = true;
+      this.app.handles.setVisible(false);
+      this.app.setHeat(false);
+      this.app.setHint('Pinch your journal to sleep until tomorrow.');
+      this.app.emit('journal');
+      Sfx.chime();
+    }, 2500);
+  }
+
+  private nextDay(): void {
+    this.card.mesh.visible = false;
+    this.app.handles.setVisible(this.app.mode === 'table' && !this.app.compareOn);
+    this.story.savings += this.earned;
+    this.earned = 0;
+    this.story.day += 1;
+    this.story.joy = Math.min(100, this.story.joy + 3);
+    this.save();
+    this.placeFamily();
+    this.startDay();
+  }
+
+  /** Put the family on the diorama for the current day. */
+  private placeFamily(): void {
+    const s = this.app.street;
+    const day = this.story.day;
+    s.placeFamily('player', -1.2, 12.6, Math.PI);
+    if (day >= 4 || (day === 3 && this.stepIndex > 0)) s.placeFamily('adaeze', 0.4, 12.6, Math.PI);
+    if (day >= 5) s.placeFamily('tolu', 1.6, 12.6, Math.PI);
+    s.placeFamily('baba', 2.6, 13.1, Math.PI);
+  }
+
+  // ------------------------------------------------------------- events
+
+  private onEvent(event: string): void {
+    if (!this.active || !this.stepId) return;
+    const app = this.app;
+    const id = this.stepId;
+    if (id === 'build' && event.startsWith('edit:')) {
+      if (isComplete(app.design)) this.next();
+      else app.setHint(scratchHint(app.design, app.mud));
+    }
+    if ((id === 'room' || id === 'nursery') && event === 'edit:room' && app.design.rooms.length > this.stepStart) {
+      if (id === 'nursery') {
+        const d = cloneDesign(app.design);
+        d.rooms[d.rooms.length - 1].name = 'Nursery';
+        app.commit(d, 'name');
+      }
+      this.story.joy = Math.min(100, this.story.joy + 6);
+      this.next();
     }
     if (event === 'inside') {
-      this.layTray();
-      if (this.beat === 'movein') {
+      if (id === 'movein') {
         this.story.movedIn = true;
-        this.go('settle');
+        this.layTray();
+        app.setHint('Pinch a belonging and put it where you want it.');
+      } else if (id === 'fan') {
+        this.layTray();
+      } else if (id === 'dinner') {
+        this.home.start('dinner', () => this.homeDone(15), { adaeze: true, tolu: this.story.day >= 5 });
+      } else if (id === 'cot') {
+        this.home.start('cot', () => this.homeDone(12));
+      } else if (id === 'homework') {
+        this.home.start('homework', () => this.homeDone(10));
       }
     }
     if (event === 'table') {
       this.tray.visible = false;
-      if (this.beat === 'settle') this.go('afternoon');
+      if (id === 'out') this.next();
     }
-    if (event === 'accepted' && this.beat === 'advice') {
-      // Baba keeps advising until the house is clearly cooler.
+    if (event === 'accepted') {
       this.fixes += 1;
-      if (app.dayScore - this.adviceStart < 8 && this.fixes < 3) {
-        app.setHint('Better. Pinch Baba again: there is more to do.');
-        return;
+      if (id === 'advice') {
+        if (app.dayScore - this.stepStart >= 8 || this.fixes >= 3) this.next();
+        else app.setHint('Better. Pinch Baba again: there is more to do.');
       }
-      this.t = 0;
-      this.beat = 'evening';
-      this.hourGoal = null;
-      this.hourNow = null;
-      // Let the cooler house sit on screen a moment before the sun sets.
-      this.t = -3.5;
-      app.storyChanged();
+      if (id === 'cool') this.checkNursery();
     }
+  }
+
+  private homeDone(joy: number): void {
+    this.story.joy = Math.min(100, this.story.joy + joy);
+    this.save();
+    this.app.setHint('Palm up, or pinch Table, to go back out.');
+    this.next();
   }
 
   // ------------------------------------------------------------ belongings
@@ -430,7 +658,6 @@ export class StoryMode {
       it.group.position.copy(this.tray.position).addScaledVector(side, offset);
       it.group.position.y = 0.66 + (id === 'photo' ? 0.25 : 0);
       it.group.rotation.y = this.tray.rotation.y + Math.PI;
-      // Tray pieces are shown small; they grow to full size when placed.
       it.group.userData.size = id === 'mattress' || id === 'rug' ? 0.18 : 0.3;
       it.group.scale.setScalar(it.group.userData.size as number);
     });
@@ -450,7 +677,6 @@ export class StoryMode {
     let y = 0.02;
     let rot = it.group.rotation.y;
     if (id === 'photo') {
-      // Nearest wall, at eye height, facing into the room.
       let best: Side = 'north';
       let bestD = Infinity;
       for (const side of SIDES) {
@@ -467,7 +693,6 @@ export class StoryMode {
       if (best === 'west') { x = room.x0 + off; rot = Math.PI / 2; }
       if (best === 'east') { x = room.x1 - off; rot = -Math.PI / 2; }
       y = Math.min(1.9, Math.max(1.2, p.y));
-      // Hang it on solid wall, clear of any window or doorway on that side.
       if (isOpen(d, room, best)) {
         const info = room.sides[best];
         const alongX = best === 'north' || best === 'south';
@@ -476,9 +701,7 @@ export class StoryMode {
         if (Math.abs(at - info.center) < clear) {
           const lo = (alongX ? room.x0 : room.z0) + inset + 0.3;
           const hi = (alongX ? room.x1 : room.z1) - inset - 0.3;
-          const left = info.center - clear;
-          const right = info.center + clear;
-          const pick = at >= info.center ? (right <= hi ? right : left) : left >= lo ? left : right;
+          const pick = at >= info.center ? (info.center + clear <= hi ? info.center + clear : info.center - clear) : info.center - clear >= lo ? info.center - clear : info.center + clear;
           if (alongX) x = Math.min(hi, Math.max(lo, pick));
           else z = Math.min(hi, Math.max(lo, pick));
         }
@@ -490,109 +713,114 @@ export class StoryMode {
     it.group.rotation.y = rot;
     this.story.items = this.story.items.filter((q) => q.item !== id);
     this.story.items.push({ item: id, room: room.id, x, y, z, rot });
+    this.story.joy = Math.min(100, this.story.joy + 3);
     Sfx.release();
     this.save();
     app.refresh(false);
     this.layTray();
     app.toast(`${ITEM_LABEL[id]} placed.`, 1.6);
-    if (this.beat === 'settle' && this.story.items.length >= 2) {
-      app.setHint('Feels like home. Palm up, or pinch Table, to go back out.');
-    }
+    if (this.stepId === 'movein' && this.story.items.length >= 2) this.next();
   }
 
-  // ------------------------------------------------------------ day cycle
+  // ---------------------------------------------------------------- tick
 
-  private nextDay(): void {
-    this.card.mesh.visible = false;
-    this.app.handles.setVisible(this.app.mode === 'table' && !this.app.compareOn);
-    this.story.day += 1;
-    this.story.power = true;
-    this.save();
-    this.stars.visible = false;
-    this.setSky('dawn');
-    this.hourGoal = 8;
-    this.hourNow = null;
-    this.go('free');
-    const prompt = visitPrompt(this.story.day);
-    this.app.say(prompt ? `Day ${this.story.day}. ${prompt}` : `Day ${this.story.day}. Good morning, neighbour.`);
-  }
-
-  private setSky(name: keyof typeof SKY, now = false): void {
-    this.skyGoal = SKY[name];
-    if (now) {
-      this.skyNow = { sky: [...this.skyGoal.sky], equator: [...this.skyGoal.equator], ground: [...this.skyGoal.ground] };
-      this.applySky();
-    }
-  }
-
-  private applySky(): void {
-    try {
-      const root = this.app.world.activeLevel.value;
-      root.getVectorView(DomeGradient, 'sky').set(this.skyNow.sky);
-      root.getVectorView(DomeGradient, 'equator').set(this.skyNow.equator);
-      root.getVectorView(DomeGradient, 'ground').set(this.skyNow.ground);
-    } catch {
-      // No sky dome on this level: the story still plays.
-    }
+  /** Numbers for the status strip. */
+  status() {
+    return {
+      day: this.story.day,
+      clock: this.app.dayNight.clock,
+      savings: this.story.savings,
+      energy: this.story.energy,
+      comfort: this.app.dayScore,
+      joy: this.story.joy,
+      score: this.app.dayScore,
+    };
   }
 
   update(dt: number): void {
     if (!this.active) return;
     const app = this.app;
-    this.clock += dt;
     this.t += dt;
+    this.home.update(dt);
+    this.event.update(dt);
+    this.strip.set(this.status());
+    app.extras.update(app.design, this.story.extras);
+    app.view.flatTop = this.story.extras.floors > 1;
 
-    // Ease the sky and the sun toward where the beat wants them.
-    let moved = false;
-    for (const key of ['sky', 'equator', 'ground'] as const) {
-      for (let i = 0; i < 3; i += 1) {
-        const diff = this.skyGoal[key][i] - this.skyNow[key][i];
-        if (Math.abs(diff) > 0.002) {
-          this.skyNow[key][i] += diff * Math.min(1, dt * 0.9);
-          moved = true;
-        }
-      }
+    // Ease the clock toward where the step wants it; the sun follows.
+    if (this.clockGoal !== null) {
+      const c = app.dayNight.clock;
+      const diff = this.clockGoal - c;
+      const step = Math.sign(diff) * Math.min(Math.abs(diff), dt * 1.6);
+      app.dayNight.clock = c + step;
+      if (Math.abs(diff) < 1e-3) this.clockGoal = null;
+      app.setHour(Math.min(18, Math.max(8, app.dayNight.clock)), true);
     }
-    if (moved) this.applySky();
-    if (this.hourGoal !== null) {
-      // Track the hour as a fraction: the design snaps to quarter-hours, and
-      // at headset frame rates one tick is far less than that.
-      if (this.hourNow === null) this.hourNow = app.design.hour;
-      const diff = this.hourGoal - this.hourNow;
-      this.hourNow += Math.sign(diff) * Math.min(Math.abs(diff), dt * 2.4);
-      if (Math.abs(this.hourGoal - this.hourNow) < 1e-3) {
-        app.setHour(this.hourGoal, true);
-        this.hourGoal = null;
-        this.hourNow = null;
-      } else {
-        app.setHour(this.hourNow, true);
-      }
-    }
-    const dusk = this.skyGoal === SKY.dusk;
-    this.stars.visible = dusk || this.stars.material.opacity > 0.02;
-    this.stars.material.opacity += ((dusk ? 0.95 : 0) - this.stars.material.opacity) * Math.min(1, dt * 0.6);
-    app.headPose(_a, _q);
-    this.stars.position.copy(_a);
 
-    // The fan turns only while there is light.
+    // The fan turns only with the switch on and the light on.
     const fan = this.items.get('fan');
-    if (fan?.spin && this.story.power) fan.spin.rotation.z += dt * 14;
+    if (fan?.spin && this.story.power && this.story.fanOn) fan.spin.rotation.z += dt * 14;
     if (this.pulse > 0) {
       this.pulse = Math.max(0, this.pulse - dt);
       app.pulseHeat(this.pulse > 0 ? 1 + 0.35 * Math.abs(Math.sin(this.pulse * 7)) : 1);
     }
 
-    // Timed beats. Never advance mid-gesture or mid-transition.
+    // Builders and the ghost hand while the first house goes up.
+    const building = this.stepId === 'build' || this.stepId === 'room' || this.stepId === 'nursery';
+    const spots = building ? app.design.rooms.slice(0, 3).map((r) => [rectCx(r) + 1, rectCz(r) + 1] as [number, number]) : [];
+    app.street.setBuilders(building && spots.length > 0 && !isComplete(app.design), spots);
+    this.ghost.visible = this.stepId === 'build' && app.design.rooms.length === 0 && app.mode === 'table';
+    if (this.ghost.visible) {
+      const k = (this.t % 2.4) / 2.4;
+      const e = k < 0.25 ? 0 : Math.min(1, (k - 0.25) / 0.55);
+      this.ghost.position.set(-4 + e * 7, 0.6, -5 + e * 4);
+    }
+
+    // Timed steps.
     if (app.gestures.dragging || app.mode === 'shifting') return;
-    if (this.beat === 'afternoon' && this.t > 5 && this.hourGoal === null) {
-      app.setHeat(true);
-      if (this.t > 8) this.go('nepa');
-    } else if (this.beat === 'nepa' && this.t > 4.5) {
-      this.go('advice');
-    } else if (this.beat === 'evening' && this.t > 0 && this.hourGoal === null && this.skyGoal !== SKY.dusk) {
-      this.go('evening');
-    } else if (this.beat === 'evening' && this.t > 6.5 && this.skyGoal === SKY.dusk) {
-      this.go('journal');
+    const id = this.stepId;
+    if (id === 'afternoon' && this.clockGoal === null) {
+      if (this.t > 3) app.setHeat(true);
+      if (this.t > 6) this.next();
+    } else if (id === 'nepa' && this.t > 4.5) {
+      this.next();
+    } else if (id === 'meet') {
+      // The player walks from the gate to the buka; a heart when they meet.
+      const me = app.street.placeFamily('player', 0, 0);
+      const k = Math.min(1, this.t / 5);
+      me.group.position.set(-1.2 + (-16.4 + 1.2) * k, -0.24, 12.6 + (-1 - 12.6) * k);
+      me.group.rotation.y = Math.atan2(-15.2, -13.6);
+      me.setMode(k < 1 ? 'walk' : 'stand');
+      this.heart.mesh.visible = k >= 1;
+      this.heart.mesh.position.set(-17, 3.2 + Math.sin(this.t * 3) * 0.2, -1);
+      app.headPose(_a, _q);
+      this.heart.mesh.lookAt(_a);
+      if (this.t > 7.5) {
+        this.heart.mesh.visible = false;
+        me.setMode('stand');
+        this.story.joy = Math.min(100, this.story.joy + 15);
+        this.placeFamily();
+        app.street.placeFamily('adaeze', 0.4, 12.6, Math.PI);
+        this.next();
+      }
+    } else if (id === 'customers' && this.t > 5) {
+      this.next();
+    } else if (id === 'match' && this.t > 5) {
+      this.placeFamily();
+      this.next();
+    } else if (id === 'party' && this.clockGoal === null) {
+      if (!this.story.extras.party) {
+        this.story.extras.party = true;
+        const b = bounds(app.design);
+        const c = app.design.court ?? b;
+        const p = new Vector3(rectCx(c), 0, rectCz(c));
+        app.view.group.localToWorld(p);
+        app.table.site.worldToLocal(p);
+        app.street.setParty(true, [p.x, p.z]);
+        app.say('Ẹ ku ilé o! A house full of family and friends.');
+        this.story.joy = Math.min(100, this.story.joy + 20);
+      }
+      if (this.t > 9) this.next();
     }
   }
 

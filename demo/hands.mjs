@@ -28,7 +28,8 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
   });
   // Rehearsals run small (ILE_SMALL=1) so they finish quickly; takes are 720p.
   const small = process.env.ILE_SMALL === '1';
-  const context = await browser.newContext({ viewport: small ? { width: 480, height: 270 } : { width: 1280, height: 720 }, ignoreHTTPSErrors: true });
+  const big = process.env.ILE_HD === '1';
+  const context = await browser.newContext({ viewport: small ? { width: 480, height: 270 } : big ? { width: 1920, height: 1080 } : { width: 1280, height: 720 }, ignoreHTTPSErrors: true });
   const page = await context.newPage();
   page.on('console', (m) => { const t = m.text(); if (t.includes('[ile]')) console.log('  page:', t.slice(0, 120)); });
   page.on('pageerror', (e) => console.log('  PAGEERROR', e.message.slice(0, 300)));
@@ -47,6 +48,8 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
     headBase: [...head],
     pitch,
     fov,
+    /** App time per video frame (2 = double speed, for slow scenes). */
+    speed: 1,
     yaw: 0,
     gaze: [0, 1.0, -0.6],
     hands: {
@@ -65,7 +68,7 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
     const sway = [0.006 * Math.sin(t * 0.9), 0.004 * Math.sin(t * 1.7), 0.004 * Math.sin(t * 0.6 + 1)];
     const jit = (i, a = 0.0012) => a * Math.sin(t * (5.3 + i * 1.9) + i * 2.1);
     await page.evaluate(
-      ({ head, pitch, yaw, gaze, hands, dt, fov }) => {
+      ({ head, pitch, yaw, gaze, hands, dt, fov, speed }) => {
         const mul = (a, b) => [
           a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
           a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
@@ -91,7 +94,7 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
         // IWER's own remote-control command: the same path the IWSDK CLI uses.
         window.IWER_DEVICE.remote.dispatch('set_device_state', { state }).catch((e) => console.error('rig', e.message));
         // One fixed app tick per video frame.
-        globalThis.__ileStep = { pending: 1, dt };
+        globalThis.__ileStep = { pending: 1, dt: dt * speed };
       },
       {
         head: rig.headBase.map((v, i) => v + sway[i]),
@@ -100,6 +103,7 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
         gaze: rig.gaze,
         dt: 1 / FPS,
         fov: rig.fov,
+        speed: rig.speed,
         hands: {
           left: { ...rig.hands.left, pos: rig.hands.left.pos.map((v, i) => v + rig.offset.left[i] + jit(i)) },
           right: { ...rig.hands.right, pos: rig.hands.right.pos.map((v, i) => v + rig.offset.right[i] + jit(i + 3)) },
@@ -115,13 +119,13 @@ export async function openRig({ out, head = [0, 1.22, 0], pitch = -0.4, fov = 64
       await page.evaluate(() => {
         requestAnimationFrame(() => {
           const gl = globalThis.ile.world.renderer.domElement;
-          const c = (window.__cap ??= Object.assign(document.createElement('canvas'), { width: 1280, height: 720 }));
-          c.getContext('2d').drawImage(gl, 0, 0, 1280, 720);
+          const c = (window.__cap ??= Object.assign(document.createElement('canvas'), { width: gl.width, height: gl.height }));
+          c.getContext('2d').drawImage(gl, 0, 0, c.width, c.height);
           window.__shot = c.toDataURL('image/jpeg', 0.93);
         });
       });
     }
-    await page.clock.runFor(1000 / FPS);
+    await page.clock.runFor((1000 / FPS) * rig.speed);
     rig.t += 1 / FPS;
     if (rig.capturing) {
       const data = await page.evaluate(() => window.__shot);

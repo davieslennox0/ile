@@ -1,0 +1,28 @@
+{
+  "salary": 40000,
+  "business": 70000,
+  "days": [
+    { "day": 1, "title": "Arrival", "card": "You arrived in Yaba. ₦600,000 and an empty plot.",
+      "baba": "Ẹ káàbọ̀, my son! Welcome to Yaba. I am Baba, your neighbour. Start with one room.",
+      "steps": ["build"], "journal": "My first room stands." },
+    { "day": 2, "title": "Move in", "card": "Home! Your first night under your own roof.",
+      "baba": "Go inside, my son. Make it yours.",
+      "steps": ["movein", "fan", "out", "afternoon", "nepa", "advice"], "journal": "NEPA took light, but my room stayed cool." },
+    { "day": 3, "title": "Love", "card": "You met Adaeze at the buka. ♥",
+      "baba": "Ah! I saw you at the buka. She has a good laugh, that one.",
+      "steps": ["meet", "room", "dinner"], "journal": "Adaeze moved in. Our first dinner together." },
+    { "day": 4, "title": "Family", "card": "Welcome, little Tolu!",
+      "baba": "A baby! The nursery must stay cool, o. Babies feel the heat first.",
+      "steps": ["nursery", "cool", "cot"], "journal": "Tolu sleeps in a cool room." },
+    { "day": 5, "title": "Hustle", "card": "Adaeze opens a small food spot.",
+      "baba": "Her jollof will bring the whole street. Build her a spot by the road.",
+      "steps": ["shop", "customers"], "journal": "The food spot is open. Customers queue already." },
+    { "day": 6, "title": "Growing", "card": "Tolu's first football match.",
+      "baba": "Tolu plays like a small Okocha! Your family needs more space. Build upward.",
+      "steps": ["match", "upstairs", "homework"], "journal": "A second floor, a roof garden, and homework done." },
+    { "day": 7, "title": "Making it big", "card": "The family business is the talk of Yaba.",
+      "baba": "Look at what your hands have built, my son.",
+      "steps": ["big", "party"], "journal": "Ẹ ku ilé o! A house full of family and friends." }
+  ],
+  "costs": { "shop": 60000, "upstairs": 90000, "big": 120000 }
+}
