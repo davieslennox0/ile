@@ -344,7 +344,6 @@ export class StoryMode {
     if (!this.active || cost <= 0) return;
     this.story.savings -= cost;
     this.app.toast(`Paid ${naira(cost)}. ${naira(this.story.savings)} left.`, 2.2);
-    this.story.joy = Math.min(100, this.story.joy + 2);
     this.save();
   }
 
@@ -410,6 +409,7 @@ export class StoryMode {
     this.stepStart = d.rooms.length;
     this.fixes = 0;
     this.rise.visible = false;
+    this.app.handles.setVisible(app.mode === 'table' && !app.compareOn && !this.card.mesh.visible);
     if (id === 'build') {
       this.clockGoal = 11;
       app.setHint(scratchHint(d, app.mud));
@@ -452,20 +452,24 @@ export class StoryMode {
       const s = shopSpot(d);
       this.rise.position.set(s.x, 0, s.z);
       this.rise.visible = true;
+      // Nothing else on the table may sit between the eyes and the marker.
+      app.handles.setVisible(false);
       app.setHint(`Pinch the orange marker and pull up to build the food spot (${naira(days.costs.shop)}).`);
     } else if (id === 'customers') {
       const s = shopSpot(d);
       app.street.setQueue(5, [s.x + 3, s.z + 2.2]);
-      this.story.joy = Math.min(100, this.story.joy + 8);
+      this.story.joy = Math.min(100, this.story.joy + 4);
       app.setHint('Customers are queueing for jollof.');
     } else if (id === 'match') {
       app.street.placeFamily('tolu', 20, 6, 0).setMode('walk');
-      this.story.joy = Math.min(100, this.story.joy + 8);
+      this.story.joy = Math.min(100, this.story.joy + 4);
       app.setHint("Tolu's first match on the street pitch.");
     } else if (id === 'upstairs' || id === 'big') {
       const b = bounds(d);
       this.rise.position.set(rectCx(b), d.wallHeight * this.story.extras.floors + 1.2, rectCz(b));
       this.rise.visible = true;
+      // Nothing else on the table may sit between the eyes and the marker.
+      app.handles.setVisible(false);
       const cost = id === 'big' ? days.costs.big : days.costs.upstairs;
       app.setHint(id === 'big'
         ? `Pinch the marker and pull up: the compound rises (${naira(cost)}).`
@@ -513,9 +517,10 @@ export class StoryMode {
       e.car = true;
       e.shop = 2;
     }
-    this.story.joy = Math.min(100, this.story.joy + 8);
+    this.story.joy = Math.min(100, this.story.joy + 4);
     Sfx.chime();
     this.rise.visible = false;
+    this.app.handles.setVisible(this.app.mode === 'table');
     this.app.refresh();
     this.app.emit('edit:raise');
     this.next();
@@ -547,7 +552,7 @@ export class StoryMode {
     this.story.savings += this.earned;
     this.earned = 0;
     this.story.day += 1;
-    this.story.joy = Math.min(100, this.story.joy + 3);
+    this.story.joy = Math.min(100, this.story.joy + 1);
     this.save();
     this.placeFamily();
     this.startDay();
@@ -579,7 +584,7 @@ export class StoryMode {
         d.rooms[d.rooms.length - 1].name = 'Nursery';
         app.commit(d, 'name');
       }
-      this.story.joy = Math.min(100, this.story.joy + 6);
+      this.story.joy = Math.min(100, this.story.joy + 3);
       this.next();
     }
     if (event === 'inside') {
@@ -590,11 +595,11 @@ export class StoryMode {
       } else if (id === 'fan') {
         this.layTray();
       } else if (id === 'dinner') {
-        this.home.start('dinner', () => this.homeDone(15), { adaeze: true, tolu: this.story.day >= 5 });
+        this.home.start('dinner', () => this.homeDone(9), { adaeze: true, tolu: this.story.day >= 5 });
       } else if (id === 'cot') {
-        this.home.start('cot', () => this.homeDone(12));
+        this.home.start('cot', () => this.homeDone(7));
       } else if (id === 'homework') {
-        this.home.start('homework', () => this.homeDone(10));
+        this.home.start('homework', () => this.homeDone(5));
       }
     }
     if (event === 'table') {
@@ -713,7 +718,7 @@ export class StoryMode {
     it.group.rotation.y = rot;
     this.story.items = this.story.items.filter((q) => q.item !== id);
     this.story.items.push({ item: id, room: room.id, x, y, z, rot });
-    this.story.joy = Math.min(100, this.story.joy + 3);
+    this.story.joy = Math.min(100, this.story.joy + 2);
     Sfx.release();
     this.save();
     app.refresh(false);
@@ -798,7 +803,7 @@ export class StoryMode {
       if (this.t > 7.5) {
         this.heart.mesh.visible = false;
         me.setMode('stand');
-        this.story.joy = Math.min(100, this.story.joy + 15);
+        this.story.joy = Math.min(100, this.story.joy + 8);
         this.placeFamily();
         app.street.placeFamily('adaeze', 0.4, 12.6, Math.PI);
         this.next();
@@ -818,7 +823,7 @@ export class StoryMode {
         app.table.site.worldToLocal(p);
         app.street.setParty(true, [p.x, p.z]);
         app.say('Ẹ ku ilé o! A house full of family and friends.');
-        this.story.joy = Math.min(100, this.story.joy + 20);
+        this.story.joy = Math.min(100, this.story.joy + 10);
       }
       if (this.t > 9) this.next();
     }

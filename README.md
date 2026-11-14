@@ -1,16 +1,38 @@
 # Ilé
 
-**Sculpt a West African home with your hands, feel the Lagos sun inside it, and let an elder architect help you keep it cool.**
+**Build a home. Grow a life in Lagos, with your own hands.**
 
-Ilé (Yoruba: *home*) is a hands-first, seated VR studio for Meta Quest and Meta VR Glasses, built with the Meta Immersive Web SDK (IWSDK). A Yoruba courtyard compound (*agbo ilé*) sits on a miniature table in front of you. Pull its walls, twist its eaves, spread its courtyard, and watch a heat map show how every room copes with the afternoon sun. Then pinch a room to drop inside at full scale and sit in the shade you made.
+Ilé (Yoruba: *home*) is a cosy, hands-first, seated VR life-sim for Meta Quest and Meta VR Glasses, built with the Meta Immersive Web SDK (IWSDK). A low-poly street in Yaba, Lagos sits on a wooden table in front of you: danfos and kekes loop the road, people in agbada, iro and gele, ankara and school uniforms walk the sidewalks, kids play football, and the buka is busy. In the middle is an empty plot, and ₦600,000.
 
-Built for the Meta VR Start Developer Competition 2026 — Productivity track.
+Over seven days you build a house from mud you mix yourself, move in, survive the afternoon heat and a NEPA power cut with the help of Baba (an AI neighbour who knows the old builders' passive-cooling wisdom), meet Adaeze, cook and wash up together, welcome baby Tolu, open a food spot, build upward, and end with a house-warming party under string lights.
 
-## The loop
+Built for the Meta VR Start Developer Competition 2026.
 
-Sculpt → Heat-check → ScaleShift inside → Ask the Elder → Fix → Compare.
+Live: https://ile-dun.vercel.app
 
-## Two ways to begin
+## The seven days
+
+Days are data in `data/days.json` (event card, Baba's line, the steps, the journal line).
+
+| Day | Event | What you do with your hands |
+|---|---|---|
+| 1 Arrival | ₦600,000 and an empty plot | Pinch-drag rooms on the grid, pinch the open middle for a courtyard, carry red earth, sand and water to the pit and stir the mud, pull the walls up, palm-up → Roof |
+| 2 Move in | First night under your own roof | ScaleShift inside, place the fan, photo and more from a tray (the photo snaps to a wall), pinch the fan's switch. Then the afternoon sun, a NEPA cut, and Baba's ghost fix: pinch ✓ to accept |
+| 3 Love | You meet Adaeze at the buka | Build her a room. First dinner inside: stir the pot (circle your hand), set two plates, serve (carry the pot over each plate), eat together, wash a plate (rub it back and forth in the basin) and rack it |
+| 4 Family | Welcome, little Tolu | Build a nursery that must stay cool (Baba helps if it doesn't), place the cot, wind the mobile |
+| 5 Hustle | Adaeze opens a food spot | Pinch the marker and pull up: the food spot rises and customers queue. It earns every day |
+| 6 Growing | Tolu's first football match | Pull up a second floor and roof garden; turn the pages of Tolu's homework |
+| 7 Making it big | The talk of Yaba | Pull up the three-storey compound with solar panels and a car; the house-warming party at night |
+
+Each day ends with a journal card; pinch it to sleep. Salary (from Day 2) and the business (from Day 5) pay out overnight. The HUD shows the day and clock, ₦ savings, Energy / Comfort / Joy and the Ilé Score. Progress saves after every step.
+
+The free modes are still on the start screen: **Build from scratch** and **Start from a Yoruba compound**.
+
+## Demo video
+
+`demo/ile-v2-demo.mp4` (2:36, 1920×1080) and `demo/ile-v2-vertical.mp4` (1080×1920). Captured in the IWER emulator with the Meta VR Glasses profile, driven only by emulated hands, gaze and head, with Kokoro narration, burned-in subtitles and a synthesised soundtrack. Re-render on any NVIDIA GPU machine with `bash scripts/record-demo.sh`.
+
+## Free modes
 
 The app opens on two pinch cards:
 

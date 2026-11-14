@@ -803,7 +803,7 @@ export class App {
     this.mode = mode;
     this.room = room;
     const atTable = mode === 'table';
-    this.handles.setVisible(atTable && !this.compareOn);
+    this.handles.setVisible(atTable && !this.compareOn && !this.story?.card.mesh.visible && !this.story?.rise.visible);
     this.back.mesh.visible = mode === 'inside';
     this.hud.visible = mode !== 'shifting' && !this.compareOn && !this.cinematic;
     if (mode === 'shifting') {
@@ -1081,6 +1081,8 @@ export class App {
     this.table.faceLabels(_pos);
     this.dayNight.update(_pos);
     this.badge.mesh.visible = !this.story.active && this.mode !== 'start';
+    // The HUD shows the clock in story mode; the sun's own label would clutter.
+    this.table.sunLabel.mesh.visible = !this.story.active;
     this.overlay.faceLabels(_pos);
 
     if (this.speech.length > 0 && !this.elderBusy) {

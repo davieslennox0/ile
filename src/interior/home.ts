@@ -317,7 +317,7 @@ export class HomeLife {
       enabled: () => on() && this.task === 'homework' && this.step === 'pages',
       onDrag: (info) => {
         const d = this.delta(info);
-        if (d.x < -0.05 && this.pageAnim <= 0) {
+        if (Math.abs(d.x) > 0.05 && this.pageAnim <= 0) {
           this.pageAnim = 1;
           this.pages += 1;
           Sfx.tick();
@@ -344,7 +344,7 @@ export class HomeLife {
       }[this.step as DinnerStep] ?? '';
     }
     if (this.task === 'cot') return this.step === 'place' ? "Pinch Tolu's cot and set it down." : 'Pinch the mobile and circle your hand to wind it.';
-    return 'Pinch the notebook and swipe left to turn the page.';
+    return 'Pinch the notebook and swipe sideways to turn the page.';
   }
 
   private next(step: string): void {

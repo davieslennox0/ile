@@ -23,7 +23,7 @@ import { NO_EXTRAS, type Extras } from '../world/extras.ts';
 export const START_SAVINGS = 600_000;
 export const BELONGINGS = ['mattress', 'fan', 'pot', 'photo', 'rug', 'lantern'] as const;
 export const START_ENERGY = 100;
-export const START_JOY = 35;
+export const START_JOY = 25;
 export type ItemId = (typeof BELONGINGS)[number];
 
 export const ITEM_LABEL: Record<ItemId, string> = {

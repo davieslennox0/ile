@@ -5,7 +5,8 @@ import json
 import numpy as np
 import soundfile as sf
 
-OUT = "/tmp/v3"
+import os
+OUT = os.environ.get("OUT", "/tmp/v3")
 SR = 44100
 marks = json.load(open(f"{OUT}/marks.json"))
 vo = {v["name"]: v["seconds"] for v in json.load(open(f"{OUT}/vo.json"))}
@@ -57,6 +58,19 @@ while t < total:
         put(burst, t + pos * eighth)
     t += bar
     k += 1
+
+# A warm bassline under the bells: a short riff that repeats every bar.
+def bass(freq, length, gain):
+    t = np.arange(int(length * SR)) / SR
+    y = np.sin(2 * np.pi * freq * t) + 0.35 * np.sin(4 * np.pi * freq * t)
+    return gain * y * np.exp(-t / 0.28) * np.minimum(1, t / 0.01)
+
+RIFF = [(0, 55.0), (3, 55.0), (6, 65.4), (8, 73.4), (10, 65.4)]
+t = 0.0
+while t < total:
+    for pos, f in RIFF:
+        put(bass(f, 0.6, 0.22), t + pos * eighth)
+    t += bar
 
 # A low gong marks each new chapter.
 for m in marks:
