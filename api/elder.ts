@@ -87,13 +87,25 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
-  });
+/** The local dev server may call the deployed Elder (for capture and testing). */
+const DEV_ORIGINS = ['https://localhost:8081', 'http://localhost:8081'];
+const cors = (request: Request): Record<string, string> => {
+  const origin = request.headers.get('origin') ?? '';
+  return DEV_ORIGINS.includes(origin)
+    ? { 'access-control-allow-origin': origin, 'access-control-allow-headers': 'content-type', vary: 'origin' }
+    : {};
+};
+
+export function OPTIONS(request: Request): Response {
+  return new Response(null, { status: 204, headers: { ...cors(request), 'access-control-allow-methods': 'POST' } });
+}
 
 export async function POST(request: Request): Promise<Response> {
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...cors(request) },
+    });
   const text = await request.text();
   if (text.length > MAX_BODY) return json({ error: 'state too large' }, 413);
   let state: unknown;

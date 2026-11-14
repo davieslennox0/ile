@@ -4,7 +4,7 @@ LINES = [
     ("arrive", "You arrive at dawn, with your savings, and a neighbour called Baba.", None),
     ("rooms", "Pinch and drag to lay your rooms on the plot. Every room costs money. Leave the middle open, for a courtyard.", None),
     ("mud", "Then make your mud, the way it has always been made. Red earth. Sand. Water. And stir, with your own hand.", None),
-    ("walls", "Pull the walls up from the ground. Turn your palm up for the roof. Then cut your windows.", None),
+    ("walls", "Now pull the walls up from the ground. And turn your palm up, for the roof.", None),
     ("movein", "Now step inside, and move in. A fan. A family photo. A mattress. It is small, but it is yours.", None),
     ("afternoon", "Then the afternoon sun arrives.", None),
     ("nepa", "And NEPA takes the light. The fan stops. The room turns red.", None),

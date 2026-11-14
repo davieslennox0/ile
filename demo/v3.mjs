@@ -34,6 +34,13 @@ async function check(label, ok) {
   const s = await info();
   const pass = ok(s);
   if (!pass) fails.push(label);
+  // A take that has gone wrong is not worth hours of rendering.
+  if (!pass && TAKE) {
+    fs.writeFileSync(`${OUT}/marks.json`, JSON.stringify(rig.marks, null, 1));
+    console.log(`ABORTED at "${label}"`, JSON.stringify(s));
+    await rig.browser.close();
+    process.exit(1);
+  }
   console.log(`${pass ? '  ok  ' : '  FAIL'} ${label}`, JSON.stringify(s));
   return s;
 }
@@ -93,6 +100,25 @@ async function lay(x0, z0, x1, z1) {
 }
 
 const rest = (seconds = 0.5) => rig.move({ ...REST, gaze: LOOK }, seconds);
+
+/** Step into a room by gaze + pinch; tries rooms until one has a clear view. */
+async function enterRoom(preferred) {
+  const ids = await app(() => globalThis.ile.design.rooms.map((r) => r.id));
+  const order = [preferred, ...ids.filter((id) => id !== preferred)].filter(Boolean);
+  for (const id of order) {
+    const aim = await findRoomAim(rig, id);
+    if (!aim) continue;
+    await rig.move({ gaze: aim, right: [0.16, 1.04, -0.41] }, 0.5);
+    await rig.settle();
+    if ((await hover()) !== `room-${id}`) continue;
+    await rig.pinch('right', 1, 0.18);
+    await rig.hold(0.12);
+    await rig.pinch('right', 0, 0.18);
+    await rig.hold(0.25);
+    return id;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------- the day
 
@@ -178,38 +204,12 @@ await section('walls', async () => {
   await rest(0.5);
   await rig.hold(0.8);
   await check('roofed', (s) => s.roof && s.beat === 'movein');
-  // Cut a window in two outside walls.
-  const panels = await app(() => {
-    const a = globalThis.ile;
-    return a.handles.slots
-      .filter((m) => m.visible && m.userData.slot.type !== 'room')
-      .map((m) => { const p = m.position.clone(); m.getWorldPosition(p); return { key: `${m.userData.slot.room}:${m.userData.slot.side}`, type: m.userData.slot.type, p: [p.x, p.y, p.z] }; });
-  });
-  let cut = 0;
-  for (const panel of panels) {
-    if (cut >= 3) break;
-    rig.gaze = panel.p;
-    const was = rig.capturing;
-    rig.capturing = false;
-    await rig.settle();
-    rig.capturing = was;
-    if (!/^slot-/.test((await hover()) ?? '')) continue;
-    await tap(panel.p, 'right', /^slot-/);
-    cut += 1;
-  }
-  await check('openings cut', (s) => s.open >= 2);
   await rest();
 });
 
 let home = 'r1';
 await section('movein', async () => {
-  let aim = null;
-  for (const id of await app(() => globalThis.ile.design.rooms.map((r) => r.id))) {
-    aim = await findRoomAim(rig, id);
-    if (aim) { home = id; break; }
-  }
-  await rig.move({ gaze: LOOK }, 0.3);
-  await tap(aim, 'right', `room-${home}`);
+  home = (await enterRoom('r1')) ?? home;
   await rig.move({ ...REST, pitch: -0.3, gaze: [0, 0.7, -1.2] }, 1.6);
   await rig.hold(0.8);
   await check('inside', (s) => s.mode === 'inside' && s.beat === 'settle');
@@ -351,9 +351,7 @@ await section('years', async () => {
 await section('home', async () => {
   // Step back inside the first room, at dusk, among your things.
   await app(() => { const a = globalThis.ile; a.setHeat(false); a.setHour(17.5, true); });
-  const aim = await findRoomAim(rig, home);
-  await rig.move({ gaze: LOOK }, 0.3);
-  await tap(aim, 'right', `room-${home}`);
+  await enterRoom(home);
   await rig.move({ ...REST, pitch: -0.12, gaze: [0, 1.0, -2] }, 1.6);
   await rig.hold(1.0);
   await rig.move({ yaw: 0.4 }, 1.6);
