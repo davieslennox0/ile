@@ -38,7 +38,7 @@ The free modes are still on the start screen: **Build from scratch** and **Start
 
 ## Brand
 
-The logo is in `brand/`: the app mark (`ile-mark.svg`, PNGs at 192/512/1024), wordmark lockups for light and dark backgrounds, and a 1280×640 social card (`ile-social.png`). It is an original design in the game's palette: a rammed-earth house with a white roof and arched doorway, the Lagos sun behind it, on a teal ground line.
+The logo is in `brand/`: the app mark (`ile-mark.svg`, PNGs at 192/512/1024), wordmark lockups for light and dark backgrounds, a 1280×640 social card (`ile-social.png`), and a 3:2 thumbnail for Devpost (`ile-thumb-3x2.png`, 1500×1000). It is an original design in the game's palette: a rammed-earth house with a white roof and arched doorway, the Lagos sun behind it, on a teal ground line.
 
 ## Demo video
 
