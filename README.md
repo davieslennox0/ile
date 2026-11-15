@@ -1,9 +1,4 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="brand/ile-logo-dark.png">
-    <img alt="Ilé — Build a home. Grow a life in Lagos." src="brand/ile-logo-light.png" width="560">
-  </picture>
-</p>
+<p align="center"><img alt="Ilé — Build a home. Grow a life in Lagos." src="brand/ile-thumb-3x2.png" width="600"></p>
 
 <p align="center"><b>Build a home. Grow a life in Lagos, with your own hands.</b><br>
 Hands-first, seated VR for Meta Quest and Meta VR Glasses · <a href="https://ile-dun.vercel.app">ile-dun.vercel.app</a></p>
@@ -38,7 +33,7 @@ The free modes are still on the start screen: **Build from scratch** and **Start
 
 ## Brand
 
-The logo is in `brand/`: the app mark (`ile-mark.svg`, PNGs at 192/512/1024), wordmark lockups for light and dark backgrounds, a 1280×640 social card (`ile-social.png`), and a 3:2 thumbnail for Devpost (`ile-thumb-3x2.png`, 1500×1000). It is an original design in the game's palette: a rammed-earth house with a white roof and arched doorway, the Lagos sun behind it, on a teal ground line.
+The logo is `brand/ile-thumb-3x2.png` (1500×1000, 3:2; SVG source beside it): an original design in the game's palette, a rammed-earth house with a white roof and arched doorway, the Lagos sun behind it, on a teal ground line. The site's favicon and app icons (`public/ile-mark*`) use the same house mark on a square tile.
 
 ## Demo video
 

@@ -4,7 +4,7 @@
 
 **Track:** Gaming (casual / narrative). Hands only, seated, Meta Quest + Meta VR Glasses.
 
-**Images:** Devpost thumbnail (3:2) `brand/ile-thumb-3x2.png` (1500×1000); square mark `brand/ile-mark-1024.png`; cover `brand/ile-social.png` (1280×640); wordmark `brand/ile-logo-light.png`.
+**Images:** thumbnail and logo `brand/ile-thumb-3x2.png` (1500×1000, 3:2).
 **Video:** `demo/ile-v2-demo.mp4` (2:36; upload to YouTube and paste the link). Vertical cut for socials: `demo/ile-v2-vertical.mp4`.
 **Try it:** https://ile-dun.vercel.app
 
