@@ -4,6 +4,10 @@
 
 **Track:** Gaming (casual / narrative). Hands only, seated, Meta Quest + Meta VR Glasses.
 
+**Images:** logo / thumbnail `brand/ile-mark-1024.png` (square), cover `brand/ile-social.png` (1280×640), wordmark `brand/ile-logo-light.png`.
+**Video:** `demo/ile-v2-demo.mp4` (2:36; upload to YouTube and paste the link). Vertical cut for socials: `demo/ile-v2-vertical.mp4`.
+**Try it:** https://ile-dun.vercel.app
+
 ## Inspiration
 In Lagos, a home is built one room at a time, often by hand, and modern block houses trap heat that our grandparents' courtyard compounds never did. Ilé turns that into a cosy life-sim: start with an empty plot and ₦600,000, mix the mud yourself, and grow a family and a business on a street in Yaba.
 

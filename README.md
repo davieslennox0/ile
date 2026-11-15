@@ -1,6 +1,14 @@
-# Ilé
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/ile-logo-dark.png">
+    <img alt="Ilé — Build a home. Grow a life in Lagos." src="brand/ile-logo-light.png" width="560">
+  </picture>
+</p>
 
-**Build a home. Grow a life in Lagos, with your own hands.**
+<p align="center"><b>Build a home. Grow a life in Lagos, with your own hands.</b><br>
+Hands-first, seated VR for Meta Quest and Meta VR Glasses · <a href="https://ile-dun.vercel.app">ile-dun.vercel.app</a></p>
+
+# Ilé
 
 Ilé (Yoruba: *home*) is a cosy, hands-first, seated VR life-sim for Meta Quest and Meta VR Glasses, built with the Meta Immersive Web SDK (IWSDK). A low-poly street in Yaba, Lagos sits on a wooden table in front of you: danfos and kekes loop the road, people in agbada, iro and gele, ankara and school uniforms walk the sidewalks, kids play football, and the buka is busy. In the middle is an empty plot, and ₦600,000.
 
@@ -27,6 +35,10 @@ Days are data in `data/days.json` (event card, Baba's line, the steps, the journ
 Each day ends with a journal card; pinch it to sleep. Salary (from Day 2) and the business (from Day 5) pay out overnight. The HUD shows the day and clock, ₦ savings, Energy / Comfort / Joy and the Ilé Score. Progress saves after every step.
 
 The free modes are still on the start screen: **Build from scratch** and **Start from a Yoruba compound**.
+
+## Brand
+
+The logo is in `brand/`: the app mark (`ile-mark.svg`, PNGs at 192/512/1024), wordmark lockups for light and dark backgrounds, and a 1280×640 social card (`ile-social.png`). It is an original design in the game's palette: a rammed-earth house with a white roof and arched doorway, the Lagos sun behind it, on a teal ground line.
 
 ## Demo video
 

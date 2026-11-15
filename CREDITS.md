@@ -4,6 +4,7 @@ Ilé ships **no third-party art, models, music or sound files**.
 
 | What | Source | Licence |
 |---|---|---|
+| Logo, wordmark and social card (`brand/`) | Original design, drawn as SVG for this project | MIT (this repo) |
 | Neighbourhood, houses, people, vehicles, furniture, table, handles | Generated in code (`src/world`, `src/people`, `src/interior`, `src/model`, `src/scene`) | MIT (this repo) |
 | Ankara prints, rammed-earth textures | Generated on a canvas in code (`src/world/geo.ts`) | MIT (this repo) |
 | In-app sound effects and wind | Synthesised with WebAudio (`src/audio.ts`) | MIT (this repo) |
