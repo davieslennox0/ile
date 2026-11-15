@@ -336,10 +336,17 @@ function sideInfo(d: Design, room: RoomSpec, side: Side): SideInfo {
   return { type: 'exterior', exteriorLength: b - a, center: (a + b) / 2, span: b - a, neighbour: null };
 }
 
-/** Rooms with their names and what each side faces. */
+const ROOM_CACHE = new WeakMap<Design, Room[]>();
+
+/**
+ * Rooms with their names and what each side faces. Cached per design object:
+ * designs are treated as immutable once rooms have been read from them.
+ */
 export function rooms(d: Design): Room[] {
+  const hit = ROOM_CACHE.get(d);
+  if (hit) return hit;
   const names = autoNames(d.rooms);
-  return d.rooms.map((spec) => {
+  const out = d.rooms.map((spec) => {
     const sides = {} as Record<Side, SideInfo>;
     for (const s of SIDES) sides[s] = sideInfo(d, spec, s);
     return {
@@ -350,6 +357,8 @@ export function rooms(d: Design): Room[] {
       courtSides: SIDES.filter((s) => sides[s].type === 'court'),
     };
   });
+  ROOM_CACHE.set(d, out);
+  return out;
 }
 
 export function roomById(d: Design, id: RoomId): Room {

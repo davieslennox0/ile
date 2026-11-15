@@ -10,6 +10,7 @@ import {
   SIDES,
   isOpen,
   isValidSlot,
+  normalizeRotation,
   rectD,
   rectW,
   bounds,
@@ -59,28 +60,33 @@ export function validateAction(raw: unknown, d: Design): ElderAction | null {
       if (!(isSide(a.side) || a.side === 'all') || !isNum(a.value)) return null;
       const { min, max } = LIMITS.overhang;
       if (a.value < min || a.value > max) return null;
-      return { type: 'set_overhang', side: a.side, value: a.value };
+      return { type: 'set_overhang', side: a.side, value: Math.round(a.value * 10) / 10 };
     }
     case 'add_opening':
     case 'remove_opening': {
       if (typeof a.room !== 'string' || !isSide(a.side)) return null;
       if (!isValidSlot(d, a.room, a.side)) return null;
+      // A door already open from the neighbour's side is not a new opening.
+      const room = rooms(d).find((r) => r.id === a.room);
+      if (!room) return null;
+      const open = isOpen(d, room, a.side);
+      if ((a.type === 'add_opening') === open) return null;
       return { type: a.type, room: a.room, side: a.side };
     }
     case 'set_rotation': {
       if (!isNum(a.value) || Math.abs(a.value) > 360) return null;
-      return { type: 'set_rotation', value: a.value };
+      return { type: 'set_rotation', value: normalizeRotation(a.value) };
     }
     case 'resize_courtyard': {
       if (!isNum(a.width) || !isNum(a.depth)) return null;
       if (!d.court || a.width < LIMITS.minCourt || a.depth < LIMITS.minCourt) return null;
       if (a.width > 15 || a.depth > 15) return null;
-      return { type: 'resize_courtyard', width: a.width, depth: a.depth };
+      return { type: 'resize_courtyard', width: Math.round(a.width * 2) / 2, depth: Math.round(a.depth * 2) / 2 };
     }
     case 'set_wall_height': {
       const { min, max } = LIMITS.wallHeight;
       if (!isNum(a.value) || a.value < min || a.value > max) return null;
-      return { type: 'set_wall_height', value: a.value };
+      return { type: 'set_wall_height', value: Math.round(a.value * 10) / 10 };
     }
     case 'set_material': {
       if (!MATERIALS.includes(a.value as Material)) return null;
@@ -149,20 +155,28 @@ export function validateReply(
 /** Short human label for a proposed action, shown beside its ghost preview. */
 export function describeAction(a: ElderAction, d: Design): string {
   switch (a.type) {
-    case 'set_overhang':
+    case 'set_overhang': {
+      const was = a.side === 'all' ? Math.max(...SIDES.map((s) => d.overhang[s])) : d.overhang[a.side];
+      const verb = a.value >= was ? 'Deepen' : 'Shorten';
       return a.side === 'all'
-        ? `Deepen all eaves to ${a.value.toFixed(1)} m`
-        : `Deepen the ${a.side} eaves to ${a.value.toFixed(1)} m`;
+        ? `${verb} all eaves to ${a.value.toFixed(1)} m`
+        : `${verb} the ${a.side} eaves to ${a.value.toFixed(1)} m`;
+    }
     case 'add_opening':
       return `Open the ${roomLabel(d, a.room).toLowerCase()} to the ${a.side}`;
     case 'remove_opening':
       return `Close the ${a.side} opening of the ${roomLabel(d, a.room).toLowerCase()}`;
     case 'set_rotation':
       return `Turn the house to ${a.value}°`;
-    case 'resize_courtyard':
-      return `Widen the courtyard to ${a.width} × ${a.depth} m`;
+    case 'resize_courtyard': {
+      const c = applyAction(d, a).court;
+      const w = c ? rectW(c) : a.width;
+      const dp = c ? rectD(c) : a.depth;
+      const bigger = d.court ? w * dp >= rectW(d.court) * rectD(d.court) : true;
+      return `${bigger ? 'Widen' : 'Narrow'} the courtyard to ${w} × ${dp} m`;
+    }
     case 'set_wall_height':
-      return `Raise the walls to ${a.value.toFixed(1)} m`;
+      return `${a.value >= d.wallHeight ? 'Raise' : 'Lower'} the walls to ${a.value.toFixed(1)} m`;
     case 'set_material':
       return `Build the walls in ${a.value}`;
   }

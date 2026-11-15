@@ -96,11 +96,15 @@ export function buildCost(from: Design, to: Design): number {
   const a = quantities(from);
   const b = quantities(to);
   const more = (x: number, y: number) => Math.max(0, y - x);
+  // Each newly cut opening is paid for, even if another was closed.
+  const cut = Object.keys(to.openings).filter((k) => to.openings[k] && !from.openings[k]).length;
+  // Changing the wall material rebuilds every wall in the new material.
+  const walls = from.material !== to.material ? b.wall : more(a.wall, b.wall);
   const cost =
     more(a.floor, b.floor) * RATES.floor +
-    more(a.wall, b.wall) +
+    walls +
     more(a.roof, b.roof) * RATES.roof +
-    more(a.openings, b.openings) * RATES.opening +
+    cut * RATES.opening +
     more(a.eaves, b.eaves) * RATES.eave +
     more(a.court, b.court) * RATES.court;
   return Math.round(cost / 500) * 500;

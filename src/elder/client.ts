@@ -5,7 +5,7 @@
  * — so a proposal always arrives.
  */
 
-import { scoreDay, scoreDesign } from '../heat/score.ts';
+import { scoreDay, scoreDesign, type ComfortContext } from '../heat/score.ts';
 import type { Design } from '../model/state.ts';
 import { elderPayload, validateReply, type ElderReply } from './actions.ts';
 import { localElder } from './local.ts';
@@ -14,11 +14,12 @@ const ENDPOINT: string =
   (import.meta.env.VITE_ELDER_URL as string | undefined)?.trim() || '/api/elder';
 const TIMEOUT_MS = 9000;
 
-export async function askElder(d: Design): Promise<ElderReply> {
-  const payload = elderPayload(d, { now: scoreDesign(d), day: scoreDay(d) });
+export async function askElder(d: Design, ctx: ComfortContext = {}): Promise<ElderReply> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
+    // Same comfort context (fans, power) as the HUD, so Baba sees what the player sees.
+    const payload = elderPayload(d, { now: scoreDesign(d, d.hour, ctx), day: scoreDay(d, ctx) });
     const res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -31,7 +32,11 @@ export async function askElder(d: Design): Promise<ElderReply> {
     return { ...reply, source: 'model' };
   } catch (err) {
     console.info('[ile] using the built-in elder:', (err as Error).message);
-    return localElder(d);
+    try {
+      return localElder(d, ctx);
+    } catch {
+      return { say: 'Let the house breathe: deep eaves, open windows, an open courtyard.', actions: [], source: 'local' };
+    }
   } finally {
     clearTimeout(timer);
   }

@@ -271,6 +271,10 @@ test('action validation rejects anything outside the vocabulary', () => {
   assert.equal(validateAction({ type: 'set_overhang', side: 'west', value: 9 }, d), null);
   assert.equal(validateAction({ type: 'add_opening', room: 'attic', side: 'north' }, d), null);
   assert.ok(validateAction({ type: 'add_opening', room: 'bed2', side: 'east' }, d));
+  // The store's east door is already open from the parlour's side.
+  assert.equal(validateAction({ type: 'add_opening', room: 'parlour', side: 'west' }, d), null);
+  assert.equal(validateAction({ type: 'remove_opening', room: 'bed2', side: 'east' }, d), null, 'already closed');
+  assert.deepEqual(validateAction({ type: 'set_rotation', value: 37 }, d), { type: 'set_rotation', value: 30 });
   assert.equal(validateAction({ type: 'resize_courtyard', width: 5, depth: 5 }, scratchRing()), null);
   assert.equal(validateAction({ type: 'demolish' }, d), null);
   assert.equal(validateAction(null, d), null);
@@ -345,6 +349,9 @@ test('story: every kind of building work costs something; undoing it is free', (
   assert.ok(buildCost(d, addRoom(d, { x0: 5, x1: 8, z0: -2, z1: 2 })!) > 0);
   assert.equal(buildCost(setOverhang(d, 'west', 1.2), d), 0);
   assert.equal(buildCost(d, setRotation(d, 90)), 0, 'turning the plan on paper is free');
+  assert.ok(buildCost(d, setMaterial(d, 'block')) > 50_000, 'a new wall material rebuilds the walls');
+  const moved = setOpening(setOpening(setOpening(d, id, 'north', true), id, 'north', false), d.rooms[1].id, 'north', true);
+  assert.ok(buildCost(setOpening(d, id, 'north', true), moved) > 0, 'moving an opening pays for the new one');
 });
 
 test('story: a fan cools its room until NEPA takes light', () => {

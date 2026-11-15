@@ -7,7 +7,7 @@
  * the heat map uses, and proposes the one or two that help most.
  */
 
-import { scoreDay, scoreDesign } from '../heat/score.ts';
+import { scoreDay, scoreDesign, type ComfortContext } from '../heat/score.ts';
 import {
   LIMITS,
   SIDES,
@@ -28,8 +28,10 @@ import {
 } from './actions.ts';
 
 /** Blend of "right now" and whole-day comfort, so advice fits the hour. */
+let CTX: ComfortContext = {};
+
 function value(d: Design): number {
-  return 0.5 * scoreDesign(d).overall + 0.5 * scoreDay(d).overall;
+  return 0.5 * scoreDesign(d, d.hour, CTX).overall + 0.5 * scoreDay(d, CTX).overall;
 }
 
 function candidates(d: Design): ElderAction[] {
@@ -94,7 +96,8 @@ function line(d: Design, a: ElderAction): string {
   }
 }
 
-export function localElder(d: Design): ElderReply {
+export function localElder(d: Design, ctx: ComfortContext = {}): ElderReply {
+  CTX = ctx;
   const first = best(d, []);
   if (!first) {
     return {

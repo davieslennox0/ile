@@ -63,7 +63,7 @@ import { Table } from './scene/table.ts';
 import { Compare } from './ui/compare.ts';
 import { Label, PALETTE } from './ui/label.ts';
 import { PalmMenu, type MenuItem } from './ui/menu.ts';
-import { FREE_HINT, Onboarding, scratchHint } from './ui/onboarding.ts';
+import { Onboarding, scratchHint } from './ui/onboarding.ts';
 
 /** `start` is the opening choice between scratch and the compound. */
 export type Mode = 'start' | 'table' | 'shifting' | 'inside';
@@ -846,17 +846,24 @@ export class App {
     this.speech = ['The Elder studies your house…'];
     this.speechTime = 30;
     this.updatePanel();
-    const asked = serialize(this.design);
-    void askElder(this.design).then((reply) => {
-      this.elderBusy = false;
-      // The house changed while he was thinking: his advice no longer fits.
-      if (serialize(this.design) !== asked) {
-        this.say('You changed the house while I was looking. Ask me again.');
-        return;
-      }
-      if (reply.actions.length > 0) this.showProposal(reply);
-      this.say(reply.say);
-    });
+    const asked = this.design;
+    askElder(this.design, this.story.comfort())
+      .then((reply) => {
+        // The house changed while he was thinking (the sun moving does not count).
+        if (designChanged(asked, this.design)) {
+          this.say('You changed the house while I was looking. Ask me again.');
+          return;
+        }
+        if (reply.actions.length > 0) this.showProposal(reply);
+        this.say(reply.say);
+      })
+      .catch((err: unknown) => {
+        console.warn('[ile] the Elder failed:', err);
+        this.say('Forgive me, my mind wandered. Ask me again.');
+      })
+      .finally(() => {
+        this.elderBusy = false;
+      });
   }
 
   /** Speak a line: voiced, and shown a sentence or two at a time. */

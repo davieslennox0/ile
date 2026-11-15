@@ -100,6 +100,35 @@ export function OPTIONS(request: Request): Response {
   return new Response(null, { status: 204, headers: { ...cors(request), 'access-control-allow-methods': 'POST' } });
 }
 
+/** Best-effort limit per client address (per warm instance). */
+const WINDOW_MS = 60_000;
+const MAX_PER_WINDOW = 12;
+const hits = new Map<string, number[]>();
+function limited(request: Request): boolean {
+  const ip = (request.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown';
+  const now = Date.now();
+  const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
+  recent.push(now);
+  hits.set(ip, recent);
+  if (hits.size > 5000) hits.clear();
+  return recent.length > MAX_PER_WINDOW;
+}
+
+/** Keep only short, plain strings and numbers from the client's state. */
+function clean(v: unknown, depth = 0): unknown {
+  if (depth > 5) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'boolean' || v === null) return v;
+  if (typeof v === 'string') return v.replace(/[^\p{L}\p{N} .,'()-]/gu, '').slice(0, 40);
+  if (Array.isArray(v)) return v.slice(0, 24).map((x) => clean(x, depth + 1));
+  if (typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, 24)) out[k.slice(0, 24)] = clean(x, depth + 1);
+    return out;
+  }
+  return null;
+}
+
 export async function POST(request: Request): Promise<Response> {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
@@ -118,6 +147,8 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: 'expected a design state' }, 400);
   }
 
+  if (limited(request)) return json({ error: 'elder is resting, try again in a minute' }, 429);
+  state = clean(state);
   const key = process.env.CEREBRAS_API_KEY;
   if (!key) return json({ error: 'elder is not configured (CEREBRAS_API_KEY)' }, 503);
 
@@ -156,7 +187,7 @@ export async function POST(request: Request): Promise<Response> {
     if (typeof reply.say !== 'string' || !Array.isArray(reply.actions)) {
       return json({ error: 'malformed reply' }, 502);
     }
-    return json({ say: reply.say, actions: reply.actions.slice(0, 2) });
+    return json({ say: reply.say, actions: reply.actions.slice(0, 6) });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'AbortError';
     return json({ error: timedOut ? 'elder timed out' : 'elder failed' }, timedOut ? 504 : 500);
