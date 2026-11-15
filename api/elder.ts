@@ -102,7 +102,7 @@ export function OPTIONS(request: Request): Response {
 
 /** Best-effort limit per client address (per warm instance). */
 const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 12;
+const MAX_PER_WINDOW = 30;
 const hits = new Map<string, number[]>();
 function limited(request: Request): boolean {
   const ip = (request.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown';
